@@ -1,2 +1,4 @@
 [tools]
+bun = "latest"
+node = "latest"
 npm = "latest"

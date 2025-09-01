@@ -1,30 +1,30 @@
-import express, { type Express, type NextFunction, type Request, type Response } from "express";
+import { Hono } from "hono";
+import { logger as honoLogger } from "hono/logger";
+import { HTTPException } from "hono/http-exception";
 import type TelegramBot from "node-telegram-bot-api";
 import config from "../config/config";
 import type { WebhookRequest } from "../types";
 import { BotLogger } from "../utils/logger";
 
-const logger = new BotLogger("ExpressServer");
+const logger = new BotLogger("HonoServer");
 
-export function createServer(bot: TelegramBot): Express {
-	const app = express();
+export function createServer(bot: TelegramBot): Hono {
+	const app = new Hono();
 
-	app.use(express.json());
-	app.use(express.urlencoded({ extended: true }));
+	app.use("*", honoLogger());
 
-	app.use((req: Request, _res: Response, next: NextFunction) => {
-		logger.debug(`${req.method} ${req.path}`, {
-			ip: req.ip,
-			userAgent: req.get("user-agent"),
+	app.use("*", async (c, next) => {
+		logger.debug(`${c.req.method} ${c.req.path}`, {
+			userAgent: c.req.header("user-agent"),
 		});
-		next();
+		await next();
 	});
 
-	app.get("/health", (_req: Request, res: Response) => {
+	app.get("/health", (c) => {
 		const uptime = process.uptime();
 		const memoryUsage = process.memoryUsage();
 
-		res.json({
+		return c.json({
 			status: "healthy",
 			uptime: Math.floor(uptime),
 			memory: {
@@ -36,8 +36,8 @@ export function createServer(bot: TelegramBot): Express {
 		});
 	});
 
-	app.get("/status", (_req: Request, res: Response) => {
-		res.json({
+	app.get("/status", (c) => {
+		return c.json({
 			bot: {
 				running: true,
 				mode: config.bot.webhook ? "webhook" : "polling",
@@ -51,9 +51,9 @@ export function createServer(bot: TelegramBot): Express {
 	});
 
 	if (config.bot.webhook) {
-		app.post(config.bot.webhook.path, async (req: Request, res: Response) => {
+		app.post(config.bot.webhook.path, async (c) => {
 			try {
-				const update = req.body as WebhookRequest;
+				const update = await c.req.json() as WebhookRequest;
 
 				logger.debug("Webhook update received", {
 					updateId: update.update_id,
@@ -63,17 +63,17 @@ export function createServer(bot: TelegramBot): Express {
 
 				await bot.processUpdate(update as any);
 
-				res.sendStatus(200);
+				return c.body(null, 200);
 			} catch (error) {
 				logger.error("Webhook processing error", error);
-				res.sendStatus(200);
+				return c.body(null, 200);
 			}
 		});
 
 		logger.info(`Webhook endpoint configured at ${config.bot.webhook.path}`);
 	}
 
-	app.get("/metrics", (_req: Request, res: Response) => {
+	app.get("/metrics", (c) => {
 		const memoryUsage = process.memoryUsage();
 		const cpuUsage = process.cpuUsage();
 
@@ -99,28 +99,32 @@ export function createServer(bot: TelegramBot): Express {
 			`process_cpu_system_seconds_total ${cpuUsage.system / 1000000}`,
 		].join("\n");
 
-		res.set("Content-Type", "text/plain");
-		res.send(metrics);
+		c.header("Content-Type", "text/plain");
+		return c.text(metrics);
 	});
 
-	app.use((req: Request, res: Response) => {
-		res.status(404).json({
+	app.notFound((c) => {
+		return c.json({
 			error: "Not Found",
 			message: "The requested endpoint does not exist",
-			path: req.path,
-		});
+			path: c.req.path,
+		}, 404);
 	});
 
-	app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-		logger.error("Express error", err);
+	app.onError((err, c) => {
+		logger.error("Hono error", err);
 
-		res.status(500).json({
+		if (err instanceof HTTPException) {
+			return c.json({ error: err.message }, err.status);
+		}
+
+		return c.json({
 			error: "Internal Server Error",
 			message:
 				config.server.environment === "production"
 					? "An error occurred processing your request"
 					: err.message,
-		});
+		}, 500);
 	});
 
 	return app;

@@ -20,9 +20,12 @@ async function startBot(): Promise<void> {
 				allowed_updates: ["message", "callback_query", "inline_query"],
 			});
 
-			app.listen(config.server.port, () => {
-				logger.info(`Webhook server listening on port ${config.server.port}`);
+			Bun.serve({
+				port: config.server.port,
+				fetch: app.fetch,
 			});
+
+			logger.info(`Webhook server listening on port ${config.server.port}`);
 		} else {
 			logger.info("Starting bot in polling mode");
 			await bot.start();
