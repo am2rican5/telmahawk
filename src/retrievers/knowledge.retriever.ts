@@ -79,7 +79,8 @@ export class KnowledgeRetriever extends BaseRetriever {
 
 		try {
 			// Build dynamic WHERE conditions
-			let whereConditions = "to_tsvector('english', title || ' ' || content) @@ plainto_tsquery('english', $1)";
+			let whereConditions =
+				"to_tsvector('english', title || ' ' || content) @@ plainto_tsquery('english', $1)";
 			const queryParams: any[] = [query];
 
 			if (source) {
@@ -88,7 +89,7 @@ export class KnowledgeRetriever extends BaseRetriever {
 			}
 
 			if (sourceType) {
-				whereConditions += " AND \"sourceType\" = $" + (queryParams.length + 1);
+				whereConditions += ' AND "sourceType" = $' + (queryParams.length + 1);
 				queryParams.push(sourceType);
 			}
 
@@ -106,7 +107,10 @@ export class KnowledgeRetriever extends BaseRetriever {
 				LIMIT $${queryParams.length}
 			`;
 
-			const results = await this.prisma.$queryRawUnsafe<KnowledgeDocument[]>(sqlQuery, ...queryParams);
+			const results = await this.prisma.$queryRawUnsafe<KnowledgeDocument[]>(
+				sqlQuery,
+				...queryParams
+			);
 
 			return results;
 		} catch (error) {
@@ -242,7 +246,7 @@ export class KnowledgeRetriever extends BaseRetriever {
 				return `[Document ${index + 1}${similarity}]
 Title: ${doc.title}
 Source: ${source}
-Content: ${doc.content.length > 1000 ? doc.content.substring(0, 1000) + "..." : doc.content}
+Content: ${doc.content.length > 1000 ? `${doc.content.substring(0, 1000)}...` : doc.content}
 ${doc.summary ? `Summary: ${doc.summary}` : ""}`;
 			})
 			.join("\n\n---\n\n");
