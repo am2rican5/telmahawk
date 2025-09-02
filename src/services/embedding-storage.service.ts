@@ -1,4 +1,6 @@
-import { PrismaClient, type Embedding } from "@prisma/client";
+import { type Embedding, PrismaClient } from "@prisma/client";
+import { embed } from "ai";
+import { google } from "@ai-sdk/google";
 import { BotLogger } from "../utils/logger";
 
 const logger = new BotLogger("EmbeddingStorageService");
@@ -280,7 +282,68 @@ export class EmbeddingStorageService {
 		}
 	}
 
+	/**
+	 * Generate embeddings using AI SDK (following existing embedding tool pattern)
+	 */
+	public async generateEmbedding(text: string, taskType?: string): Promise<number[] | null> {
+		try {
+			// Initialize if not already done
+			if (!this.isInitialized) {
+				await this.initialize();
+			}
+
+			// Check for API key
+			const apiKey = process.env.LLM_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+			if (!apiKey) {
+				logger.warn("No API key found for embedding generation");
+				return null;
+			}
+
+			// Use Google embedding model (following the existing pattern)
+			const modelName = "gemini-embedding-001";
+			const model = google.textEmbedding(modelName);
+
+			// Set up provider options with task type and dimensionality
+			const providerOptions: Record<string, any> = {
+				google: {
+					outputDimensionality: 768,
+				},
+			};
+
+			// Map task type to Google's format
+			if (taskType) {
+				const taskTypeMap: Record<string, string> = {
+					"search_query": "RETRIEVAL_QUERY",
+					"document": "RETRIEVAL_DOCUMENT", 
+					"similarity": "SEMANTIC_SIMILARITY",
+					"clustering": "CLUSTERING",
+					"classification": "CLASSIFICATION"
+				};
+				providerOptions.google.taskType = taskTypeMap[taskType] || "RETRIEVAL_DOCUMENT";
+			} else {
+				providerOptions.google.taskType = "RETRIEVAL_DOCUMENT";
+			}
+
+			logger.debug(`Generating embedding using Google model: ${modelName}, taskType: ${providerOptions.google.taskType}`);
+
+			const result = await embed({
+				model,
+				value: text,
+				providerOptions: providerOptions,
+			});
+
+			logger.debug(`Embedding generated successfully (${result.embedding.length} dimensions)`);
+			return result.embedding;
+
+		} catch (error) {
+			logger.error("Failed to generate embedding", error);
+			return null;
+		}
+	}
+
 	public isEnabled(): boolean {
-		return this.isInitialized && this.prisma !== null;
+		// Check if we have API keys for embedding generation
+		const hasApiKey = !!(process.env.LLM_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY);
+		return this.isInitialized && this.prisma !== null && hasApiKey;
 	}
 }

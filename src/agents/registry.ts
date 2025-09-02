@@ -4,6 +4,7 @@ import type { SupabaseMemory } from "@voltagent/supabase";
 import type { VercelAIProvider } from "@voltagent/vercel-ai";
 import { CodeAgentFactory } from "./code.agent";
 import { GeneralAgentFactory } from "./general.agent";
+import { KnowledgeAgentFactory } from "./knowledge.agent";
 import type { AgentFactory } from "./types";
 
 export class AgentRegistry {
@@ -16,6 +17,7 @@ export class AgentRegistry {
 	private registerDefaultAgents(): void {
 		this.factories.set("general", new GeneralAgentFactory());
 		this.factories.set("code", new CodeAgentFactory());
+		this.factories.set("knowledge", new KnowledgeAgentFactory());
 	}
 
 	public register(key: string, factory: AgentFactory): void {

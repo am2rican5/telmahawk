@@ -212,3 +212,41 @@ model VoltagentMemoryConversationsMigrationFlag {
   
   @@map("voltagent_memory_conversations_migration_flags")
 }
+
+// Knowledge Document Models
+model KnowledgeDocument {
+  id          String    @id @default(uuid())
+  title       String
+  url         String?   @unique
+  source      String    // e.g., "blog.aloha-corp.com", "manual_upload"
+  sourceType  String    // e.g., "blog", "pdf", "text"
+  content     String    @db.Text
+  embedding   Json?     // Store embedding vector as JSON array
+  model       String?   // Embedding model used
+  dimensions  Int?      // Embedding dimensions
+  summary     String?   @db.Text
+  metadata    Json?     // Additional metadata (tags, author, etc.)
+  parentId    String?   @map("parent_id") // For chunked documents
+  chunkIndex  Int?      @map("chunk_index") // Position in parent document
+  chunkSize   Int?      @map("chunk_size") // Size of this chunk
+  totalChunks Int?      @map("total_chunks") // Total chunks in parent
+  language    String?   @default("en")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  
+  // Relationships
+  parent      KnowledgeDocument? @relation("DocumentChunks", fields: [parentId], references: [id], onDelete: Cascade)
+  chunks      KnowledgeDocument[] @relation("DocumentChunks")
+  
+  // Indexes for efficient searching
+  @@index([source])
+  @@index([sourceType])
+  @@index([url])
+  @@index([parentId])
+  @@index([chunkIndex])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@index([model])
+  @@index([title])
+  @@map("knowledge_documents")
+}

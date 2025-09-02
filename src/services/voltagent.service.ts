@@ -6,9 +6,9 @@ import { SupabaseMemory } from "@voltagent/supabase";
 import { VercelAIProvider } from "@voltagent/vercel-ai";
 import { AgentRegistry } from "../agents";
 import config from "../config/config";
-import { EmbeddingStorageService } from "./embedding-storage.service";
 import { ToolRegistry } from "../tools";
 import { BotLogger } from "../utils/logger";
+import { EmbeddingStorageService } from "./embedding-storage.service";
 
 const logger = new BotLogger("VoltagentService");
 

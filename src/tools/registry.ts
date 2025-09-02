@@ -1,6 +1,7 @@
 import type { Tool } from "@voltagent/core";
-import { EmbeddingRetrievalToolFactory } from "./embedding-retrieval.tool";
 import { EmbeddingToolFactory } from "./embedding.tool";
+import { EmbeddingRetrievalToolFactory } from "./embedding-retrieval.tool";
+import { KnowledgeRetrieverToolFactory } from "./knowledge-retriever.tool";
 import type { ToolFactory } from "./types";
 
 export class ToolRegistry {
@@ -13,6 +14,7 @@ export class ToolRegistry {
 	private registerDefaultTools(): void {
 		this.factories.set("embedding", new EmbeddingToolFactory());
 		this.factories.set("get_embedding", new EmbeddingRetrievalToolFactory());
+		this.factories.set("search_knowledge_base", new KnowledgeRetrieverToolFactory());
 	}
 
 	public register(key: string, factory: ToolFactory): void {
