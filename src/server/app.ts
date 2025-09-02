@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { logger as honoLogger } from "hono/logger";
 import { HTTPException } from "hono/http-exception";
+import { logger as honoLogger } from "hono/logger";
 import type TelegramBot from "node-telegram-bot-api";
 import config from "../config/config";
 import type { WebhookRequest } from "../types";
@@ -53,7 +53,7 @@ export function createServer(bot: TelegramBot): Hono {
 	if (config.bot.webhook) {
 		app.post(config.bot.webhook.path, async (c) => {
 			try {
-				const update = await c.req.json() as WebhookRequest;
+				const update = (await c.req.json()) as WebhookRequest;
 
 				logger.debug("Webhook update received", {
 					updateId: update.update_id,
@@ -104,11 +104,14 @@ export function createServer(bot: TelegramBot): Hono {
 	});
 
 	app.notFound((c) => {
-		return c.json({
-			error: "Not Found",
-			message: "The requested endpoint does not exist",
-			path: c.req.path,
-		}, 404);
+		return c.json(
+			{
+				error: "Not Found",
+				message: "The requested endpoint does not exist",
+				path: c.req.path,
+			},
+			404
+		);
 	});
 
 	app.onError((err, c) => {
@@ -118,13 +121,16 @@ export function createServer(bot: TelegramBot): Hono {
 			return c.json({ error: err.message }, err.status);
 		}
 
-		return c.json({
-			error: "Internal Server Error",
-			message:
-				config.server.environment === "production"
-					? "An error occurred processing your request"
-					: err.message,
-		}, 500);
+		return c.json(
+			{
+				error: "Internal Server Error",
+				message:
+					config.server.environment === "production"
+						? "An error occurred processing your request"
+						: err.message,
+			},
+			500
+		);
 	});
 
 	return app;

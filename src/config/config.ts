@@ -30,6 +30,15 @@ export interface Config {
 	database?: {
 		url: string;
 	};
+	voltagent: {
+		enabled: boolean;
+		llm: {
+			provider: string;
+			apiKey: string;
+			model: string;
+		};
+		port: number;
+	};
 }
 
 function parseAdminIds(adminIdsString?: string): number[] {
@@ -66,6 +75,15 @@ const config: Config = {
 		windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || "60000", 10),
 		maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || "30", 10),
 	},
+	voltagent: {
+		enabled: process.env.VOLTAGENT_ENABLED === "true",
+		llm: {
+			provider: process.env.LLM_PROVIDER || "openai",
+			apiKey: process.env.LLM_API_KEY || "",
+			model: process.env.LLM_MODEL || "gpt-4o-mini",
+		},
+		port: parseInt(process.env.VOLTAGENT_PORT || "3141", 10),
+	},
 };
 
 if (process.env.WEBHOOK_DOMAIN && process.env.WEBHOOK_PATH) {
@@ -95,6 +113,15 @@ export function validateConfig(): void {
 		}
 		if (!config.bot.webhook.path.startsWith("/")) {
 			errors.push("WEBHOOK_PATH must start with /");
+		}
+	}
+
+	if (config.voltagent.enabled) {
+		if (!config.voltagent.llm.apiKey) {
+			errors.push("LLM_API_KEY is required when Voltagent is enabled");
+		}
+		if (!["openai", "anthropic", "google"].includes(config.voltagent.llm.provider)) {
+			errors.push("LLM_PROVIDER must be one of: openai, anthropic, google");
 		}
 	}
 

@@ -1,6 +1,7 @@
 import { BotInstance } from "./bot/bot";
 import config, { validateConfig } from "./config/config";
 import { createServer } from "./server/app";
+import { VoltagentService } from "./services/voltagent.service";
 import { BotLogger } from "./utils/logger";
 
 const logger = new BotLogger("Main");
@@ -9,6 +10,13 @@ async function startBot(): Promise<void> {
 	try {
 		validateConfig();
 		logger.info("Configuration validated successfully");
+
+		if (config.voltagent.enabled) {
+			logger.info("Initializing Voltagent service...");
+			const voltagentService = VoltagentService.getInstance();
+			await voltagentService.initialize();
+			logger.info("Voltagent service initialized");
+		}
 
 		const bot = BotInstance.getInstance();
 
@@ -48,6 +56,13 @@ async function gracefulShutdown(signal: string): Promise<void> {
 			await bot.deleteWebhook();
 		} else {
 			await bot.stop();
+		}
+
+		if (config.voltagent.enabled) {
+			logger.info("Shutting down Voltagent service...");
+			const voltagentService = VoltagentService.getInstance();
+			await voltagentService.shutdown();
+			logger.info("Voltagent service shutdown complete");
 		}
 
 		logger.info("Bot stopped successfully");

@@ -1,11 +1,15 @@
 import type TelegramBot from "node-telegram-bot-api";
 import type { SessionManager } from "../bot/session";
+import { AgentBridgeService } from "../services/agent-bridge.service";
 import { formatMessage } from "../utils/formatter";
 import { BotLogger } from "../utils/logger";
 
 const logger = new BotLogger("MessageHandler");
 
 export function setupMessageHandlers(bot: TelegramBot, sessionManager: SessionManager): void {
+	const agentBridge = AgentBridgeService.getInstance();
+	agentBridge.initialize(sessionManager);
+
 	bot.on("message", async (msg) => {
 		if (msg.text?.startsWith("/")) {
 			return;
@@ -14,6 +18,13 @@ export function setupMessageHandlers(bot: TelegramBot, sessionManager: SessionMa
 		const session = (msg as any).session;
 		if (session) {
 			sessionManager.incrementMessageCount(msg.from?.id || 0);
+		}
+
+		if (agentBridge.isEnabled() && msg.text) {
+			const handled = await agentBridge.processMessage(bot, msg);
+			if (handled) {
+				return;
+			}
 		}
 
 		if (msg.text) {

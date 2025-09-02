@@ -23,10 +23,17 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@ai-sdk/google": "^2.0.11",
+    "@ai-sdk/openai": "^2.0.23",
+    "@supabase/supabase-js": "^2.56.1",
+    "@voltagent/core": "^0.1.85",
+    "@voltagent/supabase": "^0.1.20",
+    "@voltagent/vercel-ai": "^1.0.0",
     "dotenv": "^16.4.5",
     "hono": "^4.6.11",
     "node-telegram-bot-api": "^0.66.0",
-    "winston": "^3.17.0"
+    "winston": "^3.17.0",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.2",
@@ -34,8 +41,10 @@
     "@types/node-telegram-bot-api": "^0.64.2",
     "@typescript-eslint/eslint-plugin": "^7.3.1",
     "@typescript-eslint/parser": "^7.3.1",
+    "@voltagent/cli": "^0.1.10",
     "eslint": "^8.57.0",
     "prettier": "^3.2.5",
+    "tsx": "^4.20.5",
     "typescript": "^5.4.3"
   }
 }

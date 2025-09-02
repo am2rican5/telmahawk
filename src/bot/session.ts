@@ -1,6 +1,12 @@
+import type { AgentSession } from "../services/agent-bridge.service";
 import { BotLogger } from "../utils/logger";
 
 const logger = new BotLogger("SessionManager");
+
+export interface SessionData {
+	agentSession?: AgentSession;
+	[key: string]: any;
+}
 
 export interface UserSession {
 	userId: number;
@@ -10,7 +16,7 @@ export interface UserSession {
 	languageCode?: string;
 	lastActivity: Date;
 	state?: any;
-	data: Map<string, any>;
+	data: SessionData;
 	messageCount: number;
 	commandCount: number;
 	isBlocked: boolean;
@@ -60,7 +66,7 @@ export class SessionManager {
 			lastName: userData?.lastName,
 			languageCode: userData?.languageCode,
 			lastActivity: new Date(),
-			data: new Map(),
+			data: {},
 			messageCount: 0,
 			commandCount: 0,
 			isBlocked: false,
@@ -92,20 +98,21 @@ export class SessionManager {
 	public setSessionData(userId: number, key: string, value: any): void {
 		const session = this.sessions.get(userId);
 		if (session) {
-			session.data.set(key, value);
+			session.data[key] = value;
 			session.lastActivity = new Date();
 		}
 	}
 
 	public getSessionData(userId: number, key: string): any {
 		const session = this.sessions.get(userId);
-		return session?.data.get(key);
+		return session?.data[key];
 	}
 
 	public deleteSessionData(userId: number, key: string): boolean {
 		const session = this.sessions.get(userId);
-		if (session) {
-			return session.data.delete(key);
+		if (session && key in session.data) {
+			delete session.data[key];
+			return true;
 		}
 		return false;
 	}

@@ -48,23 +48,23 @@ export class BotInstance {
 	private setupErrorHandling(): void {
 		this.bot.on("polling_error", async (error) => {
 			logger.error("Polling error", error);
-			
+
 			if (error.message.includes("409") && error.message.includes("getUpdates")) {
 				logger.warn("Detected 409 conflict error. Attempting to recover...");
-				
+
 				try {
 					await this.bot.stopPolling();
 					this.isRunning = false;
-					
-					await new Promise(resolve => setTimeout(resolve, 2000));
-					
+
+					await new Promise((resolve) => setTimeout(resolve, 2000));
+
 					await this.bot.deleteWebHook();
-					
-					await new Promise(resolve => setTimeout(resolve, 1000));
-					
+
+					await new Promise((resolve) => setTimeout(resolve, 1000));
+
 					await this.bot.startPolling();
 					this.isRunning = true;
-					
+
 					logger.info("Successfully recovered from polling conflict");
 				} catch (recoveryError) {
 					logger.error("Failed to recover from polling conflict", recoveryError);
@@ -103,7 +103,7 @@ export class BotInstance {
 				logger.debug("No webhook to clear or error clearing webhook", error);
 			}
 
-			await new Promise(resolve => setTimeout(resolve, 1000));
+			await new Promise((resolve) => setTimeout(resolve, 1000));
 
 			await this.bot.startPolling();
 			this.isRunning = true;
