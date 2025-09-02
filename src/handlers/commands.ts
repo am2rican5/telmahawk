@@ -33,9 +33,8 @@ export class CommandRegistry {
 		this.register("ping", this.handlePing);
 
 		if (config.voltagent.enabled) {
-			this.register("agent", this.handleAgent);
-			this.register("agents", this.handleAgentsList);
-			this.register("agent_stop", this.handleAgentStop);
+			this.register("search", this.handleSearch);
+			this.register("clear", this.handleClear);
 		}
 	}
 
@@ -75,13 +74,15 @@ export class CommandRegistry {
 		const welcomeMessage = `
 Welcome ${userName}! 🚀
 
-I'm your Telegram Bot built with TypeScript.
+I'm your Knowledge Assistant powered by AI and RAG (Retrieval-Augmented Generation).
 
 Here's what I can do:
-• Process your messages
-• Handle commands
-• Send inline keyboards
-• And much more!
+• Answer questions by searching my knowledge base 📚
+• Provide information from stored documents and articles
+• Help you find specific information quickly
+• Maintain conversation context for better responses
+
+Just ask me any question and I'll search for the best answer!
 
 Type /help to see all available commands.
     `.trim();
@@ -103,33 +104,38 @@ Type /help to see all available commands.
 	};
 
 	private handleHelp: CommandHandler = async ({ bot, msg }) => {
-		const agentCommands = config.voltagent.enabled
+		const knowledgeCommands = config.voltagent.enabled
 			? `
 
-*AI Agent Commands:*
-/agent <type> - Start conversation with AI agent
-/agents - List available AI agents
-/agent_stop - Stop current agent conversation`
+*Knowledge Commands:*
+/search <query> - Perform explicit knowledge base search
+/clear - Clear your conversation history`
 			: "";
 
 		const helpMessage = `
 *Available Commands:*
 
-/start - Start the bot
+/start - Start the bot and see introduction
 /help - Show this help message
 /info - Get bot information
 /settings - Configure bot settings
-/ping - Check if bot is responsive${agentCommands}
+/ping - Check if bot is responsive${knowledgeCommands}
+
+*How to Use:*
+• Simply send me any question or message
+• I'll automatically search my knowledge base and provide answers
+• No special commands needed for basic queries
+• I maintain conversation context for follow-up questions
 
 *Features:*
-• Text message processing
-• Inline keyboards
-• Callback queries
-• Rate limiting
-• Admin commands${config.voltagent.enabled ? "\n• AI Agent conversations" : ""}
+• AI-powered knowledge search with RAG 🧠
+• Automatic document retrieval and synthesis
+• Conversation context memory
+• Multiple search methods (text + vector similarity)
+• Source citations when available${config.voltagent.enabled ? "\n• Real-time knowledge base search" : ""}
 
 *Need assistance?*
-Contact the bot administrator.
+Just ask me a question or contact the bot administrator.
     `.trim();
 
 		await bot.sendMessage(msg.chat.id, helpMessage, {
@@ -200,85 +206,33 @@ Contact the bot administrator.
 		return Array.from(this.commands.keys());
 	}
 
-	private handleAgent: CommandHandler = async ({ bot, msg, match }) => {
-		const userId = msg.from?.id?.toString();
-		if (!userId) {
-			await bot.sendMessage(msg.chat.id, "Unable to identify user. Please try again.");
-			return;
-		}
-
+	private handleSearch: CommandHandler = async ({ bot, msg, match }) => {
 		if (!this.agentBridge.isEnabled()) {
-			await bot.sendMessage(msg.chat.id, "AI Agent functionality is currently disabled.");
+			await bot.sendMessage(msg.chat.id, "Knowledge search functionality is currently disabled.");
 			return;
 		}
 
-		const existingSession = this.agentBridge.getActiveAgentSession(userId);
-		if (existingSession) {
+		const query = match?.[2]?.trim();
+		if (!query) {
 			await bot.sendMessage(
 				msg.chat.id,
-				`You already have an active conversation with the *${existingSession.agentType}* agent. Use /agent_stop to end it first, or continue chatting.`,
-				{ parse_mode: "Markdown" }
+				"Please provide a search query. Usage: /search <your question>\n\nExample: /search what is artificial intelligence?"
 			);
-			return;
-		}
-
-		const agentType = match?.[2]?.trim();
-		if (!agentType) {
-			const availableAgents = this.agentBridge.getAvailableAgents();
-			const keyboard: InlineKeyboardMarkup = {
-				inline_keyboard: availableAgents.map((agent) => [
-					{ text: `🤖 ${agent}`, callback_data: `start_agent_${agent}` },
-				]),
-			};
-
-			await bot.sendMessage(msg.chat.id, "Please select an agent type to start a conversation:", {
-				reply_markup: keyboard,
-			});
 			return;
 		}
 
 		try {
-			const startedAgentType = await this.agentBridge.startAgentSession(userId, agentType);
-			// Escape only problematic characters that could break Markdown parsing
-			const safeAgentType = startedAgentType.replace(/[*_`]/g, "\\$&");
-			await bot.sendMessage(
-				msg.chat.id,
-				`🤖 Started conversation with *${safeAgentType}* agent!\n\nYou can now send me messages and I'll respond as your AI assistant. Use /agent_stop to end the conversation.`,
-				{ parse_mode: "Markdown" }
-			);
+			await this.agentBridge.performKnowledgeSearch(bot, msg, query);
 		} catch (error) {
-			logger.error("Error starting agent session", error);
+			logger.error("Error performing search", error);
 			await bot.sendMessage(
 				msg.chat.id,
-				error instanceof Error ? error.message : "Failed to start agent conversation."
+				"I encountered an error while searching. Please try again with different keywords."
 			);
 		}
 	};
 
-	private handleAgentsList: CommandHandler = async ({ bot, msg }) => {
-		if (!this.agentBridge.isEnabled()) {
-			await bot.sendMessage(msg.chat.id, "AI Agent functionality is currently disabled.");
-			return;
-		}
-
-		const availableAgents = this.agentBridge.getAvailableAgents();
-		if (availableAgents.length === 0) {
-			await bot.sendMessage(msg.chat.id, "No AI agents are currently available.");
-			return;
-		}
-
-		const agentList = availableAgents
-			.map((agent) => `• *${agent}* - ${this.getAgentDescription(agent)}`)
-			.join("\n");
-
-		const message = `*Available AI Agents:*\n\n${agentList}\n\nUse /agent <type> to start a conversation with any agent.`;
-
-		await bot.sendMessage(msg.chat.id, message, {
-			parse_mode: "Markdown",
-		});
-	};
-
-	private handleAgentStop: CommandHandler = async ({ bot, msg }) => {
+	private handleClear: CommandHandler = async ({ bot, msg }) => {
 		const userId = msg.from?.id?.toString();
 		if (!userId) {
 			await bot.sendMessage(msg.chat.id, "Unable to identify user. Please try again.");
@@ -286,31 +240,23 @@ Contact the bot administrator.
 		}
 
 		if (!this.agentBridge.isEnabled()) {
-			await bot.sendMessage(msg.chat.id, "AI Agent functionality is currently disabled.");
+			await bot.sendMessage(msg.chat.id, "Knowledge functionality is currently disabled.");
 			return;
 		}
 
-		const stopped = this.agentBridge.stopAgentSession(userId);
-		if (stopped) {
+		const cleared = this.agentBridge.clearConversation(userId);
+		if (cleared) {
 			await bot.sendMessage(
 				msg.chat.id,
-				"✅ Agent conversation stopped. You can start a new conversation with /agent <type>."
+				"✅ Your conversation history has been cleared. You can start fresh with your next question!"
 			);
 		} else {
-			await bot.sendMessage(msg.chat.id, "You don't have an active agent conversation to stop.");
+			await bot.sendMessage(
+				msg.chat.id,
+				"✅ Your conversation history is already clear. Feel free to ask me anything!"
+			);
 		}
 	};
-
-	private getAgentDescription(agentType: string): string {
-		switch (agentType) {
-			case "general":
-				return "General purpose assistant for questions and conversations";
-			case "code":
-				return "Programming and development assistant";
-			default:
-				return "AI assistant";
-		}
-	}
 }
 
 export function setupCommands(bot: TelegramBot): CommandRegistry {

@@ -1,23 +1,21 @@
 import type TelegramBot from "node-telegram-bot-api";
 import type { Message } from "node-telegram-bot-api";
-import type { SessionData, SessionManager } from "../bot/session";
+import type { SessionManager } from "../bot/session";
 import { BotLogger } from "../utils/logger";
 import { type AgentResponse, type ConversationInput, VoltagentService } from "./voltagent.service";
 
-const logger = new BotLogger("AgentBridge");
+const logger = new BotLogger("KnowledgeAgentBridge");
 
-export interface AgentSession {
-	agentType: string;
+export interface KnowledgeSession {
 	conversationId: string;
-	active: boolean;
 	lastActivity: number;
 }
 
 export class AgentBridgeService {
 	private static instance: AgentBridgeService;
 	private voltagentService: VoltagentService;
-	private sessionManager: SessionManager;
-	private activeAgentSessions: Map<string, AgentSession> = new Map();
+	private sessionManager!: SessionManager;
+	private knowledgeSessions: Map<string, KnowledgeSession> = new Map();
 
 	private constructor() {
 		this.voltagentService = VoltagentService.getInstance();
@@ -32,71 +30,27 @@ export class AgentBridgeService {
 
 	public initialize(sessionManager: SessionManager): void {
 		this.sessionManager = sessionManager;
-		logger.info("Agent bridge service initialized");
+		logger.info("Knowledge agent bridge service initialized");
 	}
 
-	public async startAgentSession(userId: string, agentType: string): Promise<string> {
-		if (!this.voltagentService.isEnabled()) {
-			throw new Error("Voltagent service is not enabled");
-		}
-
-		const availableAgents = this.voltagentService.getAvailableAgents();
-		if (!availableAgents.includes(agentType)) {
-			throw new Error(
-				`Agent type "${agentType}" is not available. Available agents: ${availableAgents.join(", ")}`
-			);
-		}
-
+	public clearConversation(userId: string): boolean {
 		const sessionKey = this.getUserSessionKey(userId);
-		const conversationId = this.generateConversationId(userId, agentType);
+		const knowledgeSession = this.knowledgeSessions.get(sessionKey);
 
-		const agentSession: AgentSession = {
-			agentType,
-			conversationId,
-			active: true,
-			lastActivity: Date.now(),
-		};
-
-		this.activeAgentSessions.set(sessionKey, agentSession);
-
-		const userIdNumber = parseInt(userId, 10);
-		let session = this.sessionManager.getSession(userIdNumber);
-		if (!session) {
-			session = this.sessionManager.createSession(userIdNumber);
-		}
-		session.data.agentSession = agentSession;
-		this.sessionManager.updateSession(userIdNumber, session);
-
-		logger.info(`Started agent session for user ${userId}`, {
-			agentType,
-			conversationId,
-		});
-
-		return agentType;
-	}
-
-	public stopAgentSession(userId: string): boolean {
-		const sessionKey = this.getUserSessionKey(userId);
-		const agentSession = this.activeAgentSessions.get(sessionKey);
-
-		if (!agentSession) {
+		if (!knowledgeSession) {
 			return false;
 		}
 
-		agentSession.active = false;
-		this.activeAgentSessions.delete(sessionKey);
+		this.knowledgeSessions.delete(sessionKey);
 
 		const userIdNumber = parseInt(userId, 10);
 		const session = this.sessionManager.getSession(userIdNumber);
 		if (session) {
-			delete session.data.agentSession;
+			delete session.data.knowledgeSession;
 			this.sessionManager.updateSession(userIdNumber, session);
 		}
 
-		logger.info(`Stopped agent session for user ${userId}`, {
-			agentType: agentSession.agentType,
-		});
-
+		logger.info(`Cleared conversation for user ${userId}`);
 		return true;
 	}
 
@@ -106,17 +60,14 @@ export class AgentBridgeService {
 			return false;
 		}
 
-		const sessionKey = this.getUserSessionKey(userId);
-		const agentSession = this.activeAgentSessions.get(sessionKey);
-
-		if (!agentSession || !agentSession.active) {
+		if (!this.voltagentService.isEnabled()) {
 			return false;
 		}
 
 		if (!msg.text) {
 			await bot.sendMessage(
 				msg.chat.id,
-				"I can only process text messages. Please send a text message to continue our conversation."
+				"I can only process text messages. Please send a text message for me to help you find information."
 			);
 			return true;
 		}
@@ -124,48 +75,85 @@ export class AgentBridgeService {
 		try {
 			await bot.sendChatAction(msg.chat.id, "typing");
 
+			// Get or create knowledge session
+			const sessionKey = this.getUserSessionKey(userId);
+			let knowledgeSession = this.knowledgeSessions.get(sessionKey);
+
+			if (!knowledgeSession) {
+				knowledgeSession = {
+					conversationId: this.generateConversationId(userId),
+					lastActivity: Date.now(),
+				};
+				this.knowledgeSessions.set(sessionKey, knowledgeSession);
+
+				// Update user session
+				const userIdNumber = parseInt(userId, 10);
+				let session = this.sessionManager.getSession(userIdNumber);
+				if (!session) {
+					session = this.sessionManager.createSession(userIdNumber);
+				}
+				session.data.knowledgeSession = knowledgeSession;
+				this.sessionManager.updateSession(userIdNumber, session);
+			}
+
 			const input: ConversationInput = {
 				message: msg.text,
 				userId,
-				conversationId: agentSession.conversationId,
+				conversationId: knowledgeSession.conversationId,
 			};
 
-			const response = await this.voltagentService.processMessage(input, agentSession.agentType);
+			// Always use knowledge agent
+			const response = await this.voltagentService.processMessage(input, "knowledge");
 
 			await this.sendFormattedResponse(bot, msg.chat.id, response);
 
-			agentSession.lastActivity = Date.now();
-			this.activeAgentSessions.set(sessionKey, agentSession);
-
-			const userIdNumber = parseInt(userId, 10);
-			let session = this.sessionManager.getSession(userIdNumber);
-			if (!session) {
-				session = this.sessionManager.createSession(userIdNumber);
-			}
-			session.data.agentSession = agentSession;
-			this.sessionManager.updateSession(userIdNumber, session);
+			// Update session activity
+			knowledgeSession.lastActivity = Date.now();
+			this.knowledgeSessions.set(sessionKey, knowledgeSession);
 
 			return true;
 		} catch (error) {
-			logger.error("Error processing agent message", error);
+			logger.error("Error processing knowledge query", error);
 
 			await bot.sendMessage(
 				msg.chat.id,
-				"I'm sorry, I encountered an error while processing your message. Please try again or use /agent_stop to end the conversation."
+				"I'm sorry, I encountered an error while searching for information. Please try rephrasing your question."
 			);
 
 			return true;
 		}
 	}
 
-	public getActiveAgentSession(userId: string): AgentSession | null {
+	public getKnowledgeSession(userId: string): KnowledgeSession | null {
 		const sessionKey = this.getUserSessionKey(userId);
-		const agentSession = this.activeAgentSessions.get(sessionKey);
-		return agentSession && agentSession.active ? agentSession : null;
+		return this.knowledgeSessions.get(sessionKey) || null;
 	}
 
-	public getAvailableAgents(): string[] {
-		return this.voltagentService.getAvailableAgents();
+	public async performKnowledgeSearch(bot: TelegramBot, msg: Message, query: string): Promise<void> {
+		try {
+			await bot.sendChatAction(msg.chat.id, "typing");
+
+			const userId = msg.from?.id?.toString();
+			if (!userId) {
+				await bot.sendMessage(msg.chat.id, "Unable to identify user for search.");
+				return;
+			}
+
+			const input: ConversationInput = {
+				message: `Please search for: ${query}`,
+				userId,
+				conversationId: `search-${userId}-${Date.now()}`,
+			};
+
+			const response = await this.voltagentService.processMessage(input, "knowledge");
+			await this.sendFormattedResponse(bot, msg.chat.id, response);
+		} catch (error) {
+			logger.error("Error performing knowledge search", error);
+			await bot.sendMessage(
+				msg.chat.id,
+				"I encountered an error while searching. Please try again with different keywords."
+			);
+		}
 	}
 
 	public isEnabled(): boolean {
@@ -179,25 +167,78 @@ export class AgentBridgeService {
 	): Promise<void> {
 		let formattedMessage = response.content;
 
+		// Sanitize markdown to prevent parsing errors
+		formattedMessage = this.sanitizeMarkdown(formattedMessage);
+
 		if (formattedMessage.includes("```")) {
 			formattedMessage = this.formatCodeBlocks(formattedMessage);
 		}
 
 		const MAX_MESSAGE_LENGTH = 4096;
 
-		if (formattedMessage.length <= MAX_MESSAGE_LENGTH) {
-			await bot.sendMessage(chatId, formattedMessage, {
-				parse_mode: "Markdown",
-			});
-		} else {
-			const chunks = this.splitLongMessage(formattedMessage, MAX_MESSAGE_LENGTH);
-			for (const chunk of chunks) {
-				await bot.sendMessage(chatId, chunk, {
+		try {
+			if (formattedMessage.length <= MAX_MESSAGE_LENGTH) {
+				await bot.sendMessage(chatId, formattedMessage, {
 					parse_mode: "Markdown",
 				});
-				await new Promise((resolve) => setTimeout(resolve, 100));
+			} else {
+				const chunks = this.splitLongMessage(formattedMessage, MAX_MESSAGE_LENGTH);
+				for (const chunk of chunks) {
+					await bot.sendMessage(chatId, chunk, {
+						parse_mode: "Markdown",
+					});
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				}
+			}
+		} catch (error) {
+			// If Markdown parsing fails, send as plain text
+			logger.warn("Markdown parsing failed, sending as plain text", { error });
+			const plainMessage = this.stripMarkdown(formattedMessage);
+			
+			if (plainMessage.length <= MAX_MESSAGE_LENGTH) {
+				await bot.sendMessage(chatId, plainMessage);
+			} else {
+				const chunks = this.splitLongMessage(plainMessage, MAX_MESSAGE_LENGTH);
+				for (const chunk of chunks) {
+					await bot.sendMessage(chatId, chunk);
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				}
 			}
 		}
+	}
+
+	private sanitizeMarkdown(text: string): string {
+		// Fix unbalanced asterisks and underscores
+		let sanitized = text;
+		
+		// Count asterisks and add one if odd
+		const asteriskCount = (sanitized.match(/\*/g) || []).length;
+		if (asteriskCount % 2 !== 0) {
+			sanitized = sanitized + "*";
+		}
+		
+		// Count underscores and add one if odd
+		const underscoreCount = (sanitized.match(/(?<!\\)_/g) || []).length;
+		if (underscoreCount % 2 !== 0) {
+			sanitized = sanitized + "_";
+		}
+		
+		// Escape problematic characters that aren't part of markdown syntax
+		sanitized = sanitized.replace(/([[\]()])/g, "\\$1");
+		
+		return sanitized;
+	}
+
+	private stripMarkdown(text: string): string {
+		return text
+			.replace(/\*\*(.*?)\*\*/g, "$1") // Bold
+			.replace(/\*(.*?)\*/g, "$1") // Italic
+			.replace(/__(.*?)__/g, "$1") // Bold underscore
+			.replace(/_(.*?)_/g, "$1") // Italic underscore
+			.replace(/`(.*?)`/g, "$1") // Code
+			.replace(/```[\s\S]*?```/g, (match) => match.replace(/```(\w+)?\n?/, "").replace(/```$/, "")) // Code blocks
+			.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // Links
+			.replace(/\\(.)/g, "$1"); // Unescape
 	}
 
 	private formatCodeBlocks(text: string): string {
@@ -244,7 +285,7 @@ export class AgentBridgeService {
 		return `agent_${userId}`;
 	}
 
-	private generateConversationId(userId: string, agentType: string): string {
-		return `${userId}-${agentType}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+	private generateConversationId(userId: string): string {
+		return `${userId}-knowledge-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 	}
 }

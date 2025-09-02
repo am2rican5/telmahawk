@@ -47,7 +47,7 @@ export class KnowledgeAgentFactory implements AgentFactory {
 			llm,
 			model,
 			memory: memory || undefined,
-			tools: tools || {},
+			tools: tools ? Object.values(tools) : [],
 
 			// Use the knowledge retriever for automatic RAG
 			retriever: knowledgeRetriever,

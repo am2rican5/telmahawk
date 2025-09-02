@@ -1,10 +1,10 @@
-import type { AgentSession } from "../services/agent-bridge.service";
+import type { KnowledgeSession } from "../services/agent-bridge.service";
 import { BotLogger } from "../utils/logger";
 
 const logger = new BotLogger("SessionManager");
 
 export interface SessionData {
-	agentSession?: AgentSession;
+	knowledgeSession?: KnowledgeSession;
 	[key: string]: any;
 }
 

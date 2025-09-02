@@ -1,7 +1,7 @@
 import type TelegramBot from "node-telegram-bot-api";
 import type { SessionManager } from "../bot/session";
 import config from "../config/config";
-import { AgentBridgeService } from "../services/agent-bridge.service";
+// AgentBridgeService no longer needed for callbacks in knowledge-focused interface
 import { BotLogger } from "../utils/logger";
 
 const logger = new BotLogger("CallbackHandler");
@@ -69,23 +69,30 @@ function registerDefaultCallbacks(): void {
 	registerCallback("back", handleBackCallback);
 	registerCallback("close", handleCloseCallback);
 
-	if (config.voltagent.enabled) {
-		registerCallback(/^start_agent_/, handleStartAgentCallback);
-	}
+	// Knowledge-focused callbacks can be added here if needed
 }
 
 async function handleHelpCallback(
 	bot: TelegramBot,
 	query: TelegramBot.CallbackQuery
 ): Promise<void> {
+	const knowledgeCommands = config.voltagent.enabled
+		? `
+/search <query> - Explicit knowledge base search
+/clear - Clear conversation history`
+		: "";
+
 	const helpText = `
 *Available Commands:*
 
-/start - Start the bot
+/start - Start the bot and see introduction
 /help - Show help message
 /info - Get bot information
 /settings - Configure settings
-/ping - Check bot status
+/ping - Check bot status${knowledgeCommands}
+
+*How to Use:*
+Just send me any question and I'll search my knowledge base for answers!
 
 *Need more help?*
 Contact the administrator.
@@ -329,55 +336,7 @@ async function handleCloseCallback(
 	});
 }
 
-async function handleStartAgentCallback(
-	bot: TelegramBot,
-	query: TelegramBot.CallbackQuery
-): Promise<void> {
-	const userId = query.from.id.toString();
-	const agentType = query.data?.replace("start_agent_", "");
-
-	if (!agentType) {
-		await bot.answerCallbackQuery(query.id, {
-			text: "❌ Invalid agent type",
-			show_alert: true,
-		});
-		return;
-	}
-
-	const agentBridge = AgentBridgeService.getInstance();
-
-	try {
-		const startedAgentType = await agentBridge.startAgentSession(userId, agentType);
-
-		// Escape all problematic characters that could break Telegram Markdown parsing
-		const safeAgentType = startedAgentType.replace(/[*_`[\]()~>#+=|{}.!-]/g, "\\$&");
-
-		await bot.editMessageText(
-			`🤖 Started conversation with *${safeAgentType}* agent!\n\nYou can now send me messages and I'll respond as your AI assistant. Use /agent\\_stop to end the conversation.`,
-			{
-				chat_id: query.message?.chat.id,
-				message_id: query.message?.message_id,
-				parse_mode: "Markdown",
-				reply_markup: {
-					inline_keyboard: [
-						[{ text: "❌ Stop Agent", callback_data: "agent_stop" }],
-						[{ text: "ℹ️ Agent Info", callback_data: `agent_info_${agentType}` }],
-					],
-				},
-			}
-		);
-
-		await bot.answerCallbackQuery(query.id, {
-			text: `🤖 ${startedAgentType} agent started!`,
-		});
-	} catch (error) {
-		logger.error("Error starting agent from callback", error);
-		await bot.answerCallbackQuery(query.id, {
-			text: error instanceof Error ? error.message : "Failed to start agent",
-			show_alert: true,
-		});
-	}
-}
+// Agent callback handler removed - using direct knowledge processing instead
 
 async function handleUnknownCallback(
 	bot: TelegramBot,

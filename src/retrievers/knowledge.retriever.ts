@@ -78,25 +78,35 @@ export class KnowledgeRetriever extends BaseRetriever {
 		const { limit = 10, source, sourceType } = options;
 
 		try {
-			// Use PostgreSQL full-text search with ts_rank
-			const whereClause: any = {};
+			// Build dynamic WHERE conditions
+			let whereConditions = "to_tsvector('english', title || ' ' || content) @@ plainto_tsquery('english', $1)";
+			const queryParams: any[] = [query];
 
-			if (source) whereClause.source = source;
-			if (sourceType) whereClause.sourceType = sourceType;
+			if (source) {
+				whereConditions += " AND source = $" + (queryParams.length + 1);
+				queryParams.push(source);
+			}
 
-			const results = await this.prisma.$queryRaw<KnowledgeDocument[]>`
+			if (sourceType) {
+				whereConditions += " AND \"sourceType\" = $" + (queryParams.length + 1);
+				queryParams.push(sourceType);
+			}
+
+			// Add limit parameter
+			queryParams.push(limit);
+
+			const sqlQuery = `
 				SELECT 
 					id, title, content, url, source, "sourceType", 
-					summary, metadata, "createdAt", "updatedAt",
-					ts_rank(to_tsvector('english', title || ' ' || content), plainto_tsquery('english', ${query})) as rank
+					summary, metadata, "created_at" as "createdAt", "updated_at" as "updatedAt",
+					ts_rank(to_tsvector('english', title || ' ' || content), plainto_tsquery('english', $1)) as rank
 				FROM knowledge_documents 
-				WHERE 
-					to_tsvector('english', title || ' ' || content) @@ plainto_tsquery('english', ${query})
-					${source ? `AND source = ${source}` : ""}
-					${sourceType ? `AND "sourceType" = ${sourceType}` : ""}
+				WHERE ${whereConditions}
 				ORDER BY rank DESC 
-				LIMIT ${limit}
+				LIMIT $${queryParams.length}
 			`;
+
+			const results = await this.prisma.$queryRawUnsafe<KnowledgeDocument[]>(sqlQuery, ...queryParams);
 
 			return results;
 		} catch (error) {

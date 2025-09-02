@@ -20,6 +20,7 @@ export function setupMessageHandlers(bot: TelegramBot, sessionManager: SessionMa
 			sessionManager.incrementMessageCount(msg.from?.id || 0);
 		}
 
+		// Always try to process text messages with knowledge agent first
 		if (agentBridge.isEnabled() && msg.text) {
 			const handled = await agentBridge.processMessage(bot, msg);
 			if (handled) {
@@ -27,6 +28,7 @@ export function setupMessageHandlers(bot: TelegramBot, sessionManager: SessionMa
 			}
 		}
 
+		// Fallback handlers for non-text messages or when agent is disabled
 		if (msg.text) {
 			await handleTextMessage(bot, msg);
 		} else if (msg.photo) {
@@ -61,7 +63,7 @@ async function handleTextMessage(bot: TelegramBot, msg: TelegramBot.Message): Pr
 	const text = msg.text || "";
 	const userId = msg.from?.id;
 
-	logger.info(`Text message received`, { userId, text: text.substring(0, 50) });
+	logger.info(`Fallback text message handler`, { userId, text: text.substring(0, 50) });
 
 	const greetings = [
 		"hi",
@@ -78,23 +80,24 @@ async function handleTextMessage(bot: TelegramBot, msg: TelegramBot.Message): Pr
 		const response = formatMessage("greeting", {
 			name: msg.from?.first_name || "there",
 		});
-		await bot.sendMessage(msg.chat.id, response);
+		await bot.sendMessage(msg.chat.id, `${response}\n\nI'm your knowledge assistant! Ask me any question and I'll search through my knowledge base to help you find the information you need. 📚`);
 		return;
 	}
 
 	if (lowerText.includes("thank")) {
-		await bot.sendMessage(msg.chat.id, "You're welcome! Happy to help! 😊");
+		await bot.sendMessage(msg.chat.id, "You're welcome! Feel free to ask me anything else! 😊");
 		return;
 	}
 
 	if (lowerText.includes("help")) {
-		await bot.sendMessage(msg.chat.id, "Need help? Try /help command to see what I can do!");
+		await bot.sendMessage(msg.chat.id, "I'm here to help! Just ask me any question and I'll search my knowledge base for answers. You can also use /help for commands.");
 		return;
 	}
 
+	// This fallback should rarely be reached if the knowledge agent is enabled
 	await bot.sendMessage(
 		msg.chat.id,
-		`I received your message: "${text}"\n\nTry /help to see available commands.`
+		`Hi! I'm your knowledge assistant. I can help you find information by searching through my knowledge base. Try asking me a question, or use /help to see available commands.`
 	);
 }
 
