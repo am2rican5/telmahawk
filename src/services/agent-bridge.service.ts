@@ -167,33 +167,30 @@ export class AgentBridgeService {
 	): Promise<void> {
 		let formattedMessage = response.content;
 
-		// Sanitize markdown to prevent parsing errors
-		formattedMessage = this.sanitizeMarkdown(formattedMessage);
-
-		if (formattedMessage.includes("```")) {
-			formattedMessage = this.formatCodeBlocks(formattedMessage);
-		}
+		// Convert markdown to HTML and sanitize
+		formattedMessage = this.convertMarkdownToHTML(formattedMessage);
+		formattedMessage = this.sanitizeHTML(formattedMessage);
 
 		const MAX_MESSAGE_LENGTH = 4096;
 
 		try {
 			if (formattedMessage.length <= MAX_MESSAGE_LENGTH) {
 				await bot.sendMessage(chatId, formattedMessage, {
-					parse_mode: "Markdown",
+					parse_mode: "HTML",
 				});
 			} else {
 				const chunks = this.splitLongMessage(formattedMessage, MAX_MESSAGE_LENGTH);
 				for (const chunk of chunks) {
 					await bot.sendMessage(chatId, chunk, {
-						parse_mode: "Markdown",
+						parse_mode: "HTML",
 					});
 					await new Promise((resolve) => setTimeout(resolve, 100));
 				}
 			}
 		} catch (error) {
-			// If Markdown parsing fails, send as plain text
-			logger.warn("Markdown parsing failed, sending as plain text", { error });
-			const plainMessage = this.stripMarkdown(formattedMessage);
+			// If HTML parsing fails, send as plain text
+			logger.warn("HTML parsing failed, sending as plain text", { error });
+			const plainMessage = this.stripHTML(formattedMessage);
 			
 			if (plainMessage.length <= MAX_MESSAGE_LENGTH) {
 				await bot.sendMessage(chatId, plainMessage);
@@ -207,44 +204,81 @@ export class AgentBridgeService {
 		}
 	}
 
-	private sanitizeMarkdown(text: string): string {
-		// Fix unbalanced asterisks and underscores
+	private convertMarkdownToHTML(text: string): string {
+		// First escape HTML entities in the raw text
+		let html = this.escapeHTML(text);
+		
+		// Convert code blocks first (to avoid interfering with other formatting)
+		html = html.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, language, code) => {
+			const cleanCode = code.trim();
+			return `<pre><code>${cleanCode}</code></pre>`;
+		});
+		
+		// Convert inline code
+		html = html.replace(/`([^`]+)`/g, (match, code) => {
+			return `<code>${code}</code>`;
+		});
+		
+		// Convert bold text
+		html = html.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
+		
+		// Convert italic text
+		html = html.replace(/\*(.*?)\*/g, "<i>$1</i>");
+		html = html.replace(/_(.*?)_/g, "<i>$1</i>");
+		
+		// Convert links - [text](url)
+		html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+		
+		return html;
+	}
+
+	private sanitizeHTML(text: string): string {
+		// Much simpler approach: restore only the HTML tags we created
 		let sanitized = text;
 		
-		// Count asterisks and add one if odd
-		const asteriskCount = (sanitized.match(/\*/g) || []).length;
-		if (asteriskCount % 2 !== 0) {
-			sanitized = sanitized + "*";
-		}
-		
-		// Count underscores and add one if odd
-		const underscoreCount = (sanitized.match(/(?<!\\)_/g) || []).length;
-		if (underscoreCount % 2 !== 0) {
-			sanitized = sanitized + "_";
-		}
-		
-		// Escape problematic characters that aren't part of markdown syntax
-		sanitized = sanitized.replace(/([[\]()])/g, "\\$1");
+		// Restore allowed HTML tags that were escaped
+		sanitized = sanitized
+			.replace(/&lt;b&gt;/g, "<b>")
+			.replace(/&lt;\/b&gt;/g, "</b>")
+			.replace(/&lt;i&gt;/g, "<i>")
+			.replace(/&lt;\/i&gt;/g, "</i>")
+			.replace(/&lt;u&gt;/g, "<u>")
+			.replace(/&lt;\/u&gt;/g, "</u>")
+			.replace(/&lt;s&gt;/g, "<s>")
+			.replace(/&lt;\/s&gt;/g, "</s>")
+			.replace(/&lt;code&gt;/g, "<code>")
+			.replace(/&lt;\/code&gt;/g, "</code>")
+			.replace(/&lt;pre&gt;/g, "<pre>")
+			.replace(/&lt;\/pre&gt;/g, "</pre>")
+			.replace(/&lt;a href=&quot;([^&]+)&quot;&gt;/g, '<a href="$1">')
+			.replace(/&lt;\/a&gt;/g, "</a>");
 		
 		return sanitized;
 	}
 
-	private stripMarkdown(text: string): string {
+	private escapeHTML(text: string): string {
 		return text
-			.replace(/\*\*(.*?)\*\*/g, "$1") // Bold
-			.replace(/\*(.*?)\*/g, "$1") // Italic
-			.replace(/__(.*?)__/g, "$1") // Bold underscore
-			.replace(/_(.*?)_/g, "$1") // Italic underscore
-			.replace(/`(.*?)`/g, "$1") // Code
-			.replace(/```[\s\S]*?```/g, (match) => match.replace(/```(\w+)?\n?/, "").replace(/```$/, "")) // Code blocks
-			.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // Links
-			.replace(/\\(.)/g, "$1"); // Unescape
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;")
+			.replace(/'/g, "&#39;");
 	}
 
-	private formatCodeBlocks(text: string): string {
-		return text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, language, code) => {
-			return `\`\`\`${language || ""}\n${code.trim()}\n\`\`\``;
-		});
+	private stripHTML(text: string): string {
+		return text
+			.replace(/<b>(.*?)<\/b>/g, "$1") // Bold
+			.replace(/<i>(.*?)<\/i>/g, "$1") // Italic
+			.replace(/<u>(.*?)<\/u>/g, "$1") // Underline
+			.replace(/<s>(.*?)<\/s>/g, "$1") // Strikethrough
+			.replace(/<code>(.*?)<\/code>/g, "$1") // Inline code
+			.replace(/<pre><code>(.*?)<\/code><\/pre>/gs, "$1") // Code blocks
+			.replace(/<a\s[^>]*>(.*?)<\/a>/g, "$1") // Links
+			.replace(/&amp;/g, "&") // Unescape HTML entities
+			.replace(/&lt;/g, "<")
+			.replace(/&gt;/g, ">")
+			.replace(/&quot;/g, "\"")
+			.replace(/&#39;/g, "'");
 	}
 
 	private splitLongMessage(message: string, maxLength: number): string[] {
