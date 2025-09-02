@@ -45,7 +45,7 @@ const config: Config = {
 		token: process.env.BOT_TOKEN || "",
 		polling: {
 			interval: 300,
-			autoStart: true,
+			autoStart: false,
 			params: {
 				timeout: 10,
 				allowed_updates: ["message", "callback_query", "inline_query"],
