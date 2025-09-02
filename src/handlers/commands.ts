@@ -240,7 +240,7 @@ Contact the bot administrator.
 		try {
 			const startedAgentType = await this.agentBridge.startAgentSession(userId, agentType);
 			// Escape only problematic characters that could break Markdown parsing
-			const safeAgentType = startedAgentType.replace(/[*_`]/g, '\\$&');
+			const safeAgentType = startedAgentType.replace(/[*_`]/g, "\\$&");
 			await bot.sendMessage(
 				msg.chat.id,
 				`🤖 Started conversation with *${safeAgentType}* agent!\n\nYou can now send me messages and I'll respond as your AI assistant. Use /agent_stop to end the conversation.`,

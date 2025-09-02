@@ -38,6 +38,13 @@ export interface Config {
 			model: string;
 		};
 		port: number;
+		memory?: {
+			supabaseUrl: string;
+			supabaseKey: string;
+			tableName?: string;
+			storageLimit?: number;
+			debug?: boolean;
+		};
 	};
 }
 
@@ -100,6 +107,16 @@ if (process.env.DATABASE_URL) {
 	};
 }
 
+if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
+	config.voltagent.memory = {
+		supabaseUrl: process.env.SUPABASE_URL,
+		supabaseKey: process.env.SUPABASE_KEY,
+		tableName: process.env.SUPABASE_MEMORY_TABLE_NAME || "voltagent_memory",
+		storageLimit: parseInt(process.env.SUPABASE_MEMORY_STORAGE_LIMIT || "100", 10),
+		debug: process.env.SUPABASE_MEMORY_DEBUG === "true",
+	};
+}
+
 export function validateConfig(): void {
 	const errors: string[] = [];
 
@@ -122,6 +139,14 @@ export function validateConfig(): void {
 		}
 		if (!["openai", "anthropic", "google"].includes(config.voltagent.llm.provider)) {
 			errors.push("LLM_PROVIDER must be one of: openai, anthropic, google");
+		}
+		if (config.voltagent.memory) {
+			if (!config.voltagent.memory.supabaseUrl) {
+				errors.push("SUPABASE_URL is required when memory is configured");
+			}
+			if (!config.voltagent.memory.supabaseKey) {
+				errors.push("SUPABASE_KEY is required when memory is configured");
+			}
 		}
 	}
 

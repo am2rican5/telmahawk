@@ -2,6 +2,7 @@ import { google } from "@ai-sdk/google";
 import { openai } from "@ai-sdk/openai";
 import type { LanguageModelV2 } from "@ai-sdk/provider";
 import { Agent, VoltAgent } from "@voltagent/core";
+import { SupabaseMemory } from "@voltagent/supabase";
 import { VercelAIProvider } from "@voltagent/vercel-ai";
 import config from "../config/config";
 import { BotLogger } from "../utils/logger";
@@ -24,6 +25,7 @@ export class VoltagentService {
 	private static instance: VoltagentService;
 	private voltAgent: VoltAgent | null = null;
 	private agents: Map<string, Agent> = new Map();
+	private memory: SupabaseMemory | null = null;
 	private isInitialized = false;
 
 	private constructor() {}
@@ -51,6 +53,25 @@ export class VoltagentService {
 
 			const llmProvider = this.createLLMProvider();
 
+			// Initialize memory if configured
+			if (config.voltagent.memory) {
+				try {
+					logger.info("Initializing Supabase memory...");
+					this.memory = new SupabaseMemory({
+						supabaseUrl: config.voltagent.memory.supabaseUrl,
+						supabaseKey: config.voltagent.memory.supabaseKey,
+						tableName: config.voltagent.memory.tableName,
+						storageLimit: config.voltagent.memory.storageLimit,
+						debug: config.voltagent.memory.debug,
+					});
+					logger.info("Supabase memory initialized successfully");
+				} catch (memoryError) {
+					logger.error("Failed to initialize Supabase memory", memoryError);
+					logger.warn("Continuing without memory - agents will work without persistent memory");
+					this.memory = null;
+				}
+			}
+
 			const generalAgent = new Agent({
 				name: "general-assistant",
 				instructions: `You are a helpful AI assistant accessed through a Telegram bot. 
@@ -64,6 +85,7 @@ export class VoltagentService {
 				so format your responses appropriately for chat messages.`,
 				llm: llmProvider,
 				model: this.getModelForProvider(),
+				memory: this.memory || undefined,
 			});
 
 			const codeAgent = new Agent({
@@ -80,6 +102,7 @@ export class VoltagentService {
 				Use proper formatting for code blocks.`,
 				llm: llmProvider,
 				model: this.getModelForProvider(),
+				memory: this.memory || undefined,
 			});
 
 			this.agents.set("general", generalAgent);
@@ -109,6 +132,7 @@ export class VoltagentService {
 			logger.info("Shutting down Voltagent service...");
 			this.agents.clear();
 			this.voltAgent = null;
+			this.memory = null;
 			this.isInitialized = false;
 			logger.info("Voltagent service shutdown complete");
 		} catch (error) {
@@ -135,20 +159,39 @@ export class VoltagentService {
 			const conversationId =
 				input.conversationId || this.generateConversationId(input.userId, agentType);
 
-			const response = await agent.generateText(input.message);
+			try {
+				const response = await agent.generateText(input.message, {
+					conversationId,
+				});
 
-			const content = response.text || "I'm sorry, I couldn't generate a response.";
+				const content = response.text || "I'm sorry, I couldn't generate a response.";
 
-			logger.info(`Generated response for user ${input.userId}`, {
-				responseLength: content.length,
-				agentType,
-			});
+				logger.info(`Generated response for user ${input.userId}`, {
+					responseLength: content.length,
+					agentType,
+					hasMemory: this.memory !== null,
+				});
 
-			return {
-				content,
-				agentName: agentType,
-				conversationId,
-			};
+				return {
+					content,
+					agentName: agentType,
+					conversationId,
+				};
+			} catch (agentError) {
+				// If memory fails, try without conversation context
+				if (this.memory && agentError.message?.includes("memory")) {
+					logger.warn("Memory error detected, retrying without conversation context", agentError);
+					const response = await agent.generateText(input.message);
+					const content = response.text || "I'm sorry, I couldn't generate a response.";
+
+					return {
+						content,
+						agentName: agentType,
+						conversationId,
+					};
+				}
+				throw agentError;
+			}
 		} catch (error) {
 			logger.error("Error processing message with Voltagent", error);
 			throw new Error("Failed to process your message. Please try again later.");
@@ -181,6 +224,8 @@ export class VoltagentService {
 	}
 
 	private generateConversationId(userId: string, agentType: string): string {
-		return `${userId}-${agentType}-${Date.now()}`;
+		// Create a stable conversation ID that persists across sessions
+		// This allows the agent to maintain memory continuity per user-agent pair
+		return `tg-${userId}-${agentType}`;
 	}
 }
