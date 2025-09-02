@@ -135,14 +135,7 @@ export class VoltagentService {
 			const conversationId =
 				input.conversationId || this.generateConversationId(input.userId, agentType);
 
-			const response = await agent.generate({
-				messages: [
-					{
-						role: "user",
-						content: input.message,
-					},
-				],
-			});
+			const response = await agent.generateText(input.message);
 
 			const content = response.text || "I'm sorry, I couldn't generate a response.";
 

@@ -350,8 +350,8 @@ async function handleStartAgentCallback(
 		const startedAgentType = await agentBridge.startAgentSession(userId, agentType);
 
 		// Escape all problematic characters that could break Telegram Markdown parsing
-		const safeAgentType = startedAgentType.replace(/[*_`\[\]()~>#+=|{}.!-]/g, '\\$&');
-		
+		const safeAgentType = startedAgentType.replace(/[*_`\[\]()~>#+=|{}.!-]/g, "\\$&");
+
 		await bot.editMessageText(
 			`🤖 Started conversation with *${safeAgentType}* agent!\n\nYou can now send me messages and I'll respond as your AI assistant. Use /agent\\_stop to end the conversation.`,
 			{
@@ -360,7 +360,7 @@ async function handleStartAgentCallback(
 				parse_mode: "Markdown",
 				reply_markup: {
 					inline_keyboard: [
-						[{ text: "❌ Stop Agent", callback_data: "stop_agent" }],
+						[{ text: "❌ Stop Agent", callback_data: "agent_stop" }],
 						[{ text: "ℹ️ Agent Info", callback_data: `agent_info_${agentType}` }],
 					],
 				},
