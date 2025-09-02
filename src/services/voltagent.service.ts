@@ -1,10 +1,13 @@
 import { google } from "@ai-sdk/google";
 import { openai } from "@ai-sdk/openai";
 import type { LanguageModelV2 } from "@ai-sdk/provider";
-import { Agent, VoltAgent } from "@voltagent/core";
+import { type Agent, VoltAgent } from "@voltagent/core";
 import { SupabaseMemory } from "@voltagent/supabase";
 import { VercelAIProvider } from "@voltagent/vercel-ai";
+import { AgentRegistry } from "../agents";
 import config from "../config/config";
+import { EmbeddingStorageService } from "./embedding-storage.service";
+import { ToolRegistry } from "../tools";
 import { BotLogger } from "../utils/logger";
 
 const logger = new BotLogger("VoltagentService");
@@ -25,7 +28,10 @@ export class VoltagentService {
 	private static instance: VoltagentService;
 	private voltAgent: VoltAgent | null = null;
 	private agents: Map<string, Agent> = new Map();
+	private agentRegistry: AgentRegistry = new AgentRegistry();
+	private toolRegistry: ToolRegistry = new ToolRegistry();
 	private memory: SupabaseMemory | null = null;
+	private embeddingStorage: EmbeddingStorageService = EmbeddingStorageService.getInstance();
 	private isInitialized = false;
 
 	private constructor() {}
@@ -53,6 +59,18 @@ export class VoltagentService {
 
 			const llmProvider = this.createLLMProvider();
 
+			// Initialize embedding storage if database is configured
+			if (config.database?.url) {
+				try {
+					logger.info("Initializing embedding storage service...");
+					await this.embeddingStorage.initialize();
+					logger.info("Embedding storage service initialized successfully");
+				} catch (storageError) {
+					logger.error("Failed to initialize embedding storage service", storageError);
+					logger.warn("Continuing without embedding storage - embeddings will not be saved");
+				}
+			}
+
 			// Initialize memory if configured
 			if (config.voltagent.memory) {
 				try {
@@ -72,47 +90,33 @@ export class VoltagentService {
 				}
 			}
 
-			const generalAgent = new Agent({
-				name: "general-assistant",
-				instructions: `You are a helpful AI assistant accessed through a Telegram bot. 
-				You can help with various tasks including:
-				- Answering questions
-				- Providing explanations
-				- Helping with problem-solving
-				- General conversation
-				
-				Keep your responses concise and helpful. You are communicating through Telegram, 
-				so format your responses appropriately for chat messages.`,
-				llm: llmProvider,
-				model: this.getModelForProvider(),
-				memory: this.memory || undefined,
-			});
+			const llmModel = this.getModelForProvider();
 
-			const codeAgent = new Agent({
-				name: "code-assistant",
-				instructions: `You are a programming and development assistant accessed through Telegram.
-				You specialize in:
-				- Code review and debugging
-				- Programming language help
-				- Architecture suggestions
-				- Best practices
-				- Documentation assistance
-				
-				Provide code examples when helpful, but keep responses concise for Telegram chat.
-				Use proper formatting for code blocks.`,
-				llm: llmProvider,
-				model: this.getModelForProvider(),
-				memory: this.memory || undefined,
-			});
+			// Create tools using the registry
+			const tools = this.toolRegistry.getAllTools();
 
-			this.agents.set("general", generalAgent);
-			this.agents.set("code", codeAgent);
+			// Create agents using the registry
+			for (const agentKey of this.agentRegistry.getAvailableAgents()) {
+				const agent = this.agentRegistry.createAgent(
+					agentKey,
+					llmProvider,
+					llmModel,
+					this.memory || undefined,
+					tools
+				);
+				if (agent) {
+					this.agents.set(agentKey, agent);
+				}
+			}
+
+			// Build agents object for VoltAgent
+			const voltAgents: Record<string, Agent> = {};
+			for (const [key, agent] of this.agents) {
+				voltAgents[`${key}-assistant`] = agent;
+			}
 
 			this.voltAgent = new VoltAgent({
-				agents: {
-					"general-assistant": generalAgent,
-					"code-assistant": codeAgent,
-				},
+				agents: voltAgents,
 			});
 
 			this.isInitialized = true;
@@ -130,6 +134,10 @@ export class VoltagentService {
 
 		try {
 			logger.info("Shutting down Voltagent service...");
+
+			// Shutdown embedding storage
+			await this.embeddingStorage.shutdown();
+
 			this.agents.clear();
 			this.voltAgent = null;
 			this.memory = null;

@@ -1,0 +1,214 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Embedding {
+  id           String    @id @default(uuid())
+  text         String    @db.Text
+  embedding    Json      // Store as JSON array
+  model        String
+  taskType     String?
+  dimensions   Int
+  metadata     Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  @@index([createdAt])
+  @@index([model])
+  @@index([taskType])
+  @@map("embeddings")
+}
+
+// Voltagent Memory Tables
+model VoltagentMemoryConversation {
+  id          String   @id
+  resourceId  String   @map("resource_id")
+  userId      String?  @map("user_id")
+  title       String?
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  
+  messages    VoltagentMemoryMessage[]
+  
+  @@index([resourceId])
+  @@index([userId])
+  @@index([userId, resourceId])
+  @@index([updatedAt(sort: Desc)])
+  @@map("voltagent_memory_conversations")
+}
+
+model VoltagentMemoryMessage {
+  conversationId String   @map("conversation_id")
+  messageId      String   @map("message_id")
+  role           String
+  content        String
+  type           String
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  
+  conversation   VoltagentMemoryConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  @@id([conversationId, messageId])
+  @@index([conversationId, createdAt])
+  @@index([conversationId, role, createdAt])
+  @@map("voltagent_memory_messages")
+}
+
+model VoltagentMemoryAgentHistory {
+  id             String  @id
+  agentId        String  @map("agent_id")
+  timestamp      String
+  status         String?
+  input          Json?
+  output         Json?
+  usage          Json?
+  metadata       Json?
+  userId         String? @map("user_id")
+  conversationId String? @map("conversation_id")
+  key            String?
+  value          Json?
+  
+  @@index([id])
+  @@index([agentId])
+  @@map("voltagent_memory_agent_history")
+}
+
+model VoltagentMemoryAgentHistoryStep {
+  key       String @id
+  value     Json
+  historyId String @map("history_id")
+  agentId   String @map("agent_id")
+  
+  @@index([historyId])
+  @@index([agentId])
+  @@map("voltagent_memory_agent_history_steps")
+}
+
+model VoltagentMemoryAgentHistoryTimelineEvent {
+  id              String    @id
+  historyId       String    @map("history_id")
+  agentId         String?   @map("agent_id")
+  eventType       String    @map("event_type")
+  eventName       String    @map("event_name")
+  startTime       String    @map("start_time")
+  endTime         String?   @map("end_time")
+  status          String?
+  statusMessage   String?   @map("status_message")
+  level           String?   @default("INFO")
+  version         String?
+  parentEventId   String?   @map("parent_event_id")
+  tags            Json?
+  input           Json?
+  output          Json?
+  error           Json?
+  metadata        Json?
+  createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  
+  @@index([historyId])
+  @@index([agentId])
+  @@index([eventType])
+  @@index([eventName])
+  @@index([parentEventId])
+  @@index([status])
+  @@map("voltagent_memory_agent_history_timeline_events")
+}
+
+model VoltagentMemoryWorkflowHistory {
+  id             String    @id
+  name           String
+  workflowId     String    @map("workflow_id")
+  status         String
+  startTime      DateTime  @map("start_time") @db.Timestamptz
+  endTime        DateTime? @map("end_time") @db.Timestamptz
+  input          Json?
+  output         Json?
+  metadata       Json?
+  userId         String?   @map("user_id")
+  conversationId String?   @map("conversation_id")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  
+  steps          VoltagentMemoryWorkflowStep[]
+  timelineEvents VoltagentMemoryWorkflowTimelineEvent[]
+  
+  @@index([workflowId])
+  @@index([status])
+  @@index([startTime])
+  @@index([userId])
+  @@index([conversationId])
+  @@map("voltagent_memory_workflow_history")
+}
+
+model VoltagentMemoryWorkflowStep {
+  id                  String    @id
+  workflowHistoryId   String    @map("workflow_history_id")
+  stepIndex           Int       @map("step_index")
+  stepType            String    @map("step_type")
+  stepName            String    @map("step_name")
+  status              String
+  startTime           DateTime  @map("start_time") @db.Timestamptz
+  endTime             DateTime? @map("end_time") @db.Timestamptz
+  input               Json?
+  output              Json?
+  errorMessage        String?   @map("error_message")
+  agentExecutionId    String?   @map("agent_execution_id")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  
+  workflowHistory     VoltagentMemoryWorkflowHistory @relation(fields: [workflowHistoryId], references: [id], onDelete: Cascade)
+  
+  @@index([workflowHistoryId])
+  @@index([workflowHistoryId, stepIndex])
+  @@map("voltagent_memory_workflow_steps")
+}
+
+model VoltagentMemoryWorkflowTimelineEvent {
+  id                  String    @id
+  workflowHistoryId   String    @map("workflow_history_id")
+  eventId             String    @map("event_id")
+  type                String
+  name                String
+  startTime           DateTime  @map("start_time") @db.Timestamptz
+  endTime             DateTime? @map("end_time") @db.Timestamptz
+  status              String?
+  level               String?   @default("INFO")
+  input               Json?
+  output              Json?
+  metadata            Json?
+  eventSequence       Int?      @map("event_sequence")
+  traceId             String?   @map("trace_id")
+  parentEventId       String?   @map("parent_event_id")
+  statusMessage       String?   @map("status_message")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  
+  workflowHistory     VoltagentMemoryWorkflowHistory @relation(fields: [workflowHistoryId], references: [id], onDelete: Cascade)
+  
+  @@index([workflowHistoryId])
+  @@index([type])
+  @@index([startTime])
+  @@index([eventSequence])
+  @@map("voltagent_memory_workflow_timeline_events")
+}
+
+model VoltagentMemoryConversationsMigrationFlag {
+  id            Int      @id @default(autoincrement())
+  migrationType String   @unique @map("migration_type")
+  completedAt   DateTime @default(now()) @map("completed_at") @db.Timestamptz
+  migratedCount Int?     @default(0) @map("migrated_count")
+  metadata      Json?    @default("{}")
+  
+  @@map("voltagent_memory_conversations_migration_flags")
+}

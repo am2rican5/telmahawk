@@ -13,7 +13,11 @@
     "format": "biome format --write src/",
     "check": "biome check src/",
     "check:fix": "biome check --write src/",
-    "test": "bun test"
+    "test": "bun test",
+    "db:generate": "bunx prisma generate",
+    "db:migrate": "bunx prisma migrate dev",
+    "db:push": "bunx prisma db push",
+    "db:studio": "bunx prisma studio"
   },
   "keywords": [
     "telegram",
@@ -25,6 +29,7 @@
   "dependencies": {
     "@ai-sdk/google": "^2.0.11",
     "@ai-sdk/openai": "^2.0.23",
+    "@prisma/client": "^6.15.0",
     "@supabase/supabase-js": "^2.56.1",
     "@voltagent/core": "^0.1.85",
     "@voltagent/supabase": "^0.1.20",
@@ -32,6 +37,7 @@
     "dotenv": "^16.4.5",
     "hono": "^4.6.11",
     "node-telegram-bot-api": "^0.66.0",
+    "prisma": "^6.15.0",
     "winston": "^3.17.0",
     "zod": "3.25.76"
   },

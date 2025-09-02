@@ -150,6 +150,13 @@ export function validateConfig(): void {
 		}
 	}
 
+	// Validate database URL if provided
+	if (config.database?.url) {
+		if (!config.database.url.startsWith("postgresql://")) {
+			errors.push("DATABASE_URL must be a valid PostgreSQL connection string");
+		}
+	}
+
 	if (errors.length > 0) {
 		throw new Error(`Configuration validation failed:\n${errors.join("\n")}`);
 	}
