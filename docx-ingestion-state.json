@@ -1,0 +1,36 @@
+{
+  "startTime": 1756886436319,
+  "totalFiles": 1,
+  "processedFiles": [
+    "data/aloha_book.docx"
+  ],
+  "failedFiles": [],
+  "successfulFiles": [
+    "data/aloha_book.docx"
+  ],
+  "currentPhase": "completed",
+  "completed": true,
+  "lastSaved": 1756886608606,
+  "config": {
+    "dryRun": false,
+    "verbose": false,
+    "quiet": false,
+    "concurrency": 3,
+    "delayMs": 1000,
+    "directory": "data",
+    "skipExisting": true,
+    "generateEmbeddings": true,
+    "chunkLargeDocuments": true,
+    "retryFailed": true,
+    "maxRetries": 3,
+    "resume": false,
+    "exportResults": false,
+    "exportFormat": "json",
+    "logToFile": true,
+    "sourceType": "document",
+    "sourceDomain": "local",
+    "stateFile": "/Users/am2rican5/Workspace/am2rican5/telmahawk/docx-ingestion-state.json",
+    "logFile": "/Users/am2rican5/Workspace/am2rican5/telmahawk/logs/docx-ingestion-2025-09-03.log",
+    "exportFile": "/Users/am2rican5/Workspace/am2rican5/telmahawk/docx-ingestion-results-{{timestamp}}.json"
+  }
+}

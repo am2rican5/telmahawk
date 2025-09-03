@@ -217,7 +217,7 @@ model VoltagentMemoryConversationsMigrationFlag {
 model KnowledgeDocument {
   id          String    @id @default(uuid())
   title       String
-  url         String?   @unique
+  url         String?
   source      String    // e.g., "blog.aloha-corp.com", "manual_upload"
   sourceType  String    // e.g., "blog", "pdf", "text"
   content     String    @db.Text

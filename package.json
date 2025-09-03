@@ -37,6 +37,7 @@
     "@xmldom/xmldom": "^0.8.11",
     "dotenv": "^16.4.5",
     "hono": "^4.6.11",
+    "mammoth": "^1.10.0",
     "node-telegram-bot-api": "^0.66.0",
     "playwright": "^1.55.0",
     "prisma": "^6.15.0",

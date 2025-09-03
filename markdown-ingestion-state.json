@@ -1,0 +1,32 @@
+{
+  "startTime": 1756885262163,
+  "totalFiles": 1,
+  "processedFiles": [
+    "data/aloha_guide_book.md"
+  ],
+  "failedFiles": [],
+  "successfulFiles": [],
+  "currentPhase": "completed",
+  "completed": true,
+  "lastSaved": 1756885262492,
+  "config": {
+    "dryRun": false,
+    "verbose": false,
+    "quiet": false,
+    "concurrency": 3,
+    "delayMs": 1000,
+    "path": "data/",
+    "skipExisting": false,
+    "generateEmbeddings": true,
+    "chunkLargeDocuments": true,
+    "retryFailed": true,
+    "maxRetries": 3,
+    "resume": false,
+    "exportResults": false,
+    "exportFormat": "json",
+    "logToFile": true,
+    "stateFile": "/Users/am2rican5/Workspace/am2rican5/telmahawk/markdown-ingestion-state.json",
+    "logFile": "/Users/am2rican5/Workspace/am2rican5/telmahawk/logs/markdown-ingestion-2025-09-03.log",
+    "exportFile": "/Users/am2rican5/Workspace/am2rican5/telmahawk/markdown-ingestion-results-{{timestamp}}.json"
+  }
+}

@@ -2,9 +2,9 @@
 
 import { KnowledgeIngestionService } from '../src/services/knowledge-ingestion.service';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { join, dirname, basename, extname } from 'path';
+import { Glob } from 'bun';
 
-// CLI Progress bar and formatting utilities
 class ProgressBar {
 	private startTime: number = Date.now();
 	private lastUpdate: number = 0;
@@ -17,7 +17,6 @@ class ProgressBar {
 	
 	update(current: number, label?: string) {
 		const now = Date.now();
-		// Throttle updates to avoid spam
 		if (now - this.lastUpdate < 100 && current < this.total) return;
 		this.lastUpdate = now;
 		
@@ -46,7 +45,7 @@ class ProgressBar {
 		process.stdout.write(line);
 		
 		if (current >= this.total) {
-			console.log(); // New line when complete
+			console.log();
 		}
 	}
 	
@@ -57,15 +56,14 @@ class ProgressBar {
 	}
 }
 
-// Configuration and state management
 interface IngestionConfig {
 	dryRun: boolean;
 	verbose: boolean;
 	quiet: boolean;
 	concurrency: number;
 	delayMs: number;
-	maxUrls?: number;
-	since?: string;
+	maxFiles?: number;
+	path: string;
 	filter?: RegExp[];
 	skipExisting: boolean;
 	generateEmbeddings: boolean;
@@ -83,23 +81,22 @@ interface IngestionConfig {
 
 interface IngestionState {
 	startTime: number;
-	totalUrls: number;
-	processedUrls: string[];
-	failedUrls: { url: string; attempts: number; lastError: string }[];
-	successfulUrls: string[];
+	totalFiles: number;
+	processedFiles: string[];
+	failedFiles: { file: string; attempts: number; lastError: string }[];
+	successfulFiles: string[];
 	currentPhase: string;
 	completed: boolean;
 	lastSaved: number;
 	config: Partial<IngestionConfig>;
 }
 
-// Enhanced statistics and reporting
 interface DetailedStats {
-	totalUrls: number;
-	processedUrls: number;
-	successfulUrls: number;
-	failedUrls: number;
-	skippedUrls: number;
+	totalFiles: number;
+	processedFiles: number;
+	successfulFiles: number;
+	failedFiles: number;
+	skippedFiles: number;
 	newDocuments: number;
 	updatedDocuments: number;
 	documentsWithEmbeddings: number;
@@ -111,8 +108,8 @@ interface DetailedStats {
 		total: number;
 		percentage: number;
 	};
-	errors: { url: string; error: string; attempts: number }[];
-	urlsByStatus: {
+	errors: { file: string; error: string; attempts: number }[];
+	filesByStatus: {
 		pending: string[];
 		processing: string[];
 		completed: string[];
@@ -121,7 +118,7 @@ interface DetailedStats {
 	};
 }
 
-class EnhancedAlohaIngestionService {
+class EnhancedMarkdownIngestionService {
 	private config: IngestionConfig;
 	private state: IngestionState;
 	private ingestionService: KnowledgeIngestionService;
@@ -135,9 +132,6 @@ class EnhancedAlohaIngestionService {
 		this.state = this.loadState();
 	}
 
-	/**
-	 * Main ingestion workflow
-	 */
 	async run(): Promise<void> {
 		try {
 			await this.initialize();
@@ -170,11 +164,7 @@ class EnhancedAlohaIngestionService {
 		}
 	}
 
-	/**
-	 * Initialize services and load/create state
-	 */
 	private async initialize(): Promise<void> {
-		// Setup logging
 		if (this.config.logToFile) {
 			const logsDir = join(process.cwd(), 'logs');
 			if (!existsSync(logsDir)) {
@@ -182,19 +172,16 @@ class EnhancedAlohaIngestionService {
 			}
 		}
 
-		// Load or create state
 		if (this.config.resume && existsSync(this.config.stateFile)) {
 			this.state = this.loadState();
-			this.log('info', `Resuming ingestion from ${this.state.processedUrls.length} processed URLs`);
+			this.log('info', `Resuming ingestion from ${this.state.processedFiles.length} processed files`);
 		} else {
 			this.state = this.createInitialState();
 		}
 
-		// Initialize embedding service
 		const { EmbeddingStorageService } = await import('../src/services/embedding-storage.service');
 		this.embeddingService = EmbeddingStorageService.getInstance();
 		
-		// Initialize the embedding service before checking if it's enabled
 		try {
 			await this.embeddingService.initialize();
 		} catch (error) {
@@ -210,98 +197,82 @@ class EnhancedAlohaIngestionService {
 		}
 	}
 
-	/**
-	 * Run dry run mode - show what would be processed
-	 */
 	private async runDryRun(): Promise<void> {
 		this.log('info', '🏃‍♂️ Running in DRY RUN mode - no changes will be made');
 		
-		const urls = await this.fetchUrls();
-		const filteredUrls = await this.filterUrls(urls);
+		const files = await this.fetchMarkdownFiles();
+		const filteredFiles = await this.filterFiles(files);
 		
 		console.log('\n📊 Dry Run Results:');
-		console.log(`   Total URLs found in sitemap: ${urls.length}`);
-		console.log(`   URLs after filtering: ${filteredUrls.length}`);
+		console.log(`   Total markdown files found: ${files.length}`);
+		console.log(`   Files after filtering: ${filteredFiles.length}`);
 		
-		if (this.config.since) {
-			console.log(`   Date filter: After ${this.config.since}`);
-		}
-		
-		if (this.config.maxUrls) {
-			console.log(`   URL limit: ${Math.min(filteredUrls.length, this.config.maxUrls)} URLs`);
+		if (this.config.maxFiles) {
+			console.log(`   File limit: ${Math.min(filteredFiles.length, this.config.maxFiles)} files`);
 		}
 		
 		if (this.config.skipExisting) {
-			const existingCount = urls.length - filteredUrls.length;
-			console.log(`   Existing URLs that would be skipped: ${existingCount}`);
+			const existingCount = files.length - filteredFiles.length;
+			console.log(`   Existing files that would be skipped: ${existingCount}`);
 		}
 		
-		console.log('\n📋 Sample URLs that would be processed:');
-		filteredUrls.slice(0, 10).forEach((url, i) => {
-			console.log(`   ${i + 1}. ${url}`);
+		console.log('\n📋 Sample files that would be processed:');
+		filteredFiles.slice(0, 10).forEach((file, i) => {
+			console.log(`   ${i + 1}. ${file}`);
 		});
 		
-		if (filteredUrls.length > 10) {
-			console.log(`   ... and ${filteredUrls.length - 10} more URLs`);
+		if (filteredFiles.length > 10) {
+			console.log(`   ... and ${filteredFiles.length - 10} more files`);
 		}
 	}
 
-	/**
-	 * Run the actual ingestion process
-	 */
 	private async runIngestion(): Promise<void> {
-		this.log('info', '🚀 Starting Aloha Corp blog ingestion...');
+		this.log('info', '🚀 Starting Markdown file ingestion...');
 		this.state.startTime = Date.now();
-		this.state.currentPhase = 'fetching_sitemap';
+		this.state.currentPhase = 'fetching_files';
 		
-		// Fetch and filter URLs
-		const urls = await this.fetchUrls();
-		const urlsToProcess = await this.filterUrls(urls);
+		const files = await this.fetchMarkdownFiles();
+		const filesToProcess = await this.filterFiles(files);
 		
-		this.state.totalUrls = urlsToProcess.length;
+		this.state.totalFiles = filesToProcess.length;
 		this.saveState();
 		
-		if (urlsToProcess.length === 0) {
-			this.log('warn', 'No URLs to process');
+		if (filesToProcess.length === 0) {
+			this.log('warn', 'No files to process');
 			return;
 		}
 		
 		if (!this.config.quiet) {
-			this.progressBar = new ProgressBar(urlsToProcess.length, 50, true);
+			this.progressBar = new ProgressBar(filesToProcess.length, 50, true);
 		}
 		
-		// Process URLs in batches with retry logic
 		let processed = 0;
 		const batchSize = this.config.concurrency;
 		
-		for (let i = 0; i < urlsToProcess.length; i += batchSize) {
-			const batch = urlsToProcess.slice(i, i + batchSize);
+		for (let i = 0; i < filesToProcess.length; i += batchSize) {
+			const batch = filesToProcess.slice(i, i + batchSize);
 			
 			this.state.currentPhase = 'processing_batch';
 			await this.processBatch(batch);
 			
 			processed += batch.length;
-			this.progressBar?.update(processed, `Processed ${processed}/${urlsToProcess.length} URLs`);
+			this.progressBar?.update(processed, `Processed ${processed}/${filesToProcess.length} files`);
 			
-			// Save state periodically
-			if (Date.now() - this.state.lastSaved > 30000) { // Every 30 seconds
+			if (Date.now() - this.state.lastSaved > 30000) {
 				this.saveState();
 			}
 			
-			// Memory cleanup
 			if (processed % 50 === 0) {
 				this.performMemoryCleanup();
 			}
 			
-			// Delay between batches
-			if (i + batchSize < urlsToProcess.length && this.config.delayMs > 0) {
+			if (i + batchSize < filesToProcess.length && this.config.delayMs > 0) {
 				await this.sleep(this.config.delayMs);
 			}
 		}
 		
-		// Retry failed URLs if configured
-		if (this.config.retryFailed && this.state.failedUrls.length > 0) {
-			await this.retryFailedUrls();
+		if (this.config.retryFailed && this.state.failedFiles.length > 0) {
+			await this.retryFailedFiles();
 		}
 		
 		this.state.completed = true;
@@ -309,182 +280,242 @@ class EnhancedAlohaIngestionService {
 		this.saveState();
 	}
 
-	/**
-	 * Process a batch of URLs
-	 */
-	private async processBatch(urls: string[]): Promise<void> {
-		const promises = urls.map(async (url) => {
+	private async processBatch(files: string[]): Promise<void> {
+		const promises = files.map(async (file) => {
 			try {
-				// Skip if already processed
-				if (this.state.processedUrls.includes(url)) {
-					return { url, success: true, skipped: true };
+				if (this.state.processedFiles.includes(file)) {
+					return { file, success: true, skipped: true };
 				}
 				
-				// Use ContentFetcher directly since we removed Playwright
-				const { ContentFetcherService } = await import('../src/services/content-fetcher.service');
-				const contentFetcher = new ContentFetcherService();
-				const content = await contentFetcher.fetchContent(url);
+				const content = await this.parseMarkdownFile(file);
 				
-				// Store the document
 				await this.storeDocument(content, {
 					generateEmbeddings: this.config.generateEmbeddings,
 					chunkLargeDocuments: this.config.chunkLargeDocuments,
-					sourceType: 'blog',
-					sourceDomain: 'blog.aloha-corp.com'
+					sourceType: 'markdown',
+					sourceDomain: 'local'
 				});
 				
-				this.state.processedUrls.push(url);
-				this.state.successfulUrls.push(url);
+				this.state.processedFiles.push(file);
+				this.state.successfulFiles.push(file);
 				
-				return { url, success: true };
+				return { file, success: true };
 			} catch (error) {
-				this.handleUrlError(url, error);
-				return { url, success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+				// Handle unique constraint errors specifically
+				if (error instanceof Error && error.message.includes('Unique constraint failed on the fields: (`url`)')) {
+					this.log('warn', `Document already exists for ${file}, skipping...`);
+					this.state.processedFiles.push(file);
+					// Don't add to successfulFiles since we didn't actually process it
+					return { file, success: true, skipped: true };
+				}
+				
+				this.handleFileError(file, error);
+				return { file, success: false, error: error instanceof Error ? error.message : 'Unknown error' };
 			}
 		});
 		
 		await Promise.allSettled(promises);
 	}
 
-	/**
-	 * Retry previously failed URLs
-	 */
-	private async retryFailedUrls(): Promise<void> {
-		const urlsToRetry = this.state.failedUrls
+	private async retryFailedFiles(): Promise<void> {
+		const filesToRetry = this.state.failedFiles
 			.filter(f => f.attempts < this.config.maxRetries)
-			.map(f => f.url);
+			.map(f => f.file);
 		
-		if (urlsToRetry.length === 0) return;
+		if (filesToRetry.length === 0) return;
 		
-		this.log('info', `🔄 Retrying ${urlsToRetry.length} failed URLs...`);
+		this.log('info', `🔄 Retrying ${filesToRetry.length} failed files...`);
 		
 		if (!this.config.quiet) {
-			this.progressBar = new ProgressBar(urlsToRetry.length, 30, true);
+			this.progressBar = new ProgressBar(filesToRetry.length, 30, true);
 		}
 		
-		for (let i = 0; i < urlsToRetry.length; i++) {
-			const url = urlsToRetry[i];
+		for (let i = 0; i < filesToRetry.length; i++) {
+			const file = filesToRetry[i];
 			
 			try {
-				await this.processBatch([url]);
+				await this.processBatch([file]);
 				
-				// Remove from failed list if successful
-				this.state.failedUrls = this.state.failedUrls.filter(f => f.url !== url);
+				this.state.failedFiles = this.state.failedFiles.filter(f => f.file !== file);
 			} catch (error) {
-				// Increment retry count
-				const failedItem = this.state.failedUrls.find(f => f.url === url);
+				const failedItem = this.state.failedFiles.find(f => f.file === file);
 				if (failedItem) {
 					failedItem.attempts++;
 					failedItem.lastError = error instanceof Error ? error.message : 'Unknown error';
 				}
 			}
 			
-			this.progressBar?.update(i + 1, `Retrying ${i + 1}/${urlsToRetry.length} failed URLs`);
+			this.progressBar?.update(i + 1, `Retrying ${i + 1}/${filesToRetry.length} failed files`);
 			
 			if (this.config.delayMs > 0) {
-				await this.sleep(this.config.delayMs * 2); // Longer delay for retries
+				await this.sleep(this.config.delayMs * 2);
 			}
 		}
 	}
 
-	/**
-	 * Fetch URLs from sitemap
-	 */
-	private async fetchUrls(): Promise<{ loc: string; lastmod?: string }[]> {
-		this.log('info', '🗺️  Fetching sitemap...');
+	private async fetchMarkdownFiles(): Promise<string[]> {
+		this.log('info', '📁 Fetching markdown files...');
 		
 		try {
-			const { SitemapService } = await import('../src/services/sitemap.service');
-			const sitemapService = new SitemapService();
-			return await sitemapService.getAlohaBlogUrls();
+			const pattern = '**/*.md';
+			const glob = new Glob(pattern);
+			const files: string[] = [];
+			
+			for await (const file of glob.scan({
+				cwd: this.config.path,
+				onlyFiles: true,
+				dot: false
+			})) {
+				const normalizedFile = file.replace(/\\/g, '/');
+				if (!normalizedFile.includes('node_modules/') && 
+					!normalizedFile.includes('.git/') && 
+					!normalizedFile.includes('dist/') && 
+					!normalizedFile.includes('build/')) {
+					files.push(join(this.config.path, normalizedFile));
+				}
+			}
+			
+			this.log('info', `Found ${files.length} markdown files`);
+			return files;
 		} catch (error) {
-			this.handleError('Failed to fetch sitemap', error);
+			this.handleError('Failed to fetch markdown files', error);
 			throw error;
 		}
 	}
 
-	/**
-	 * Filter URLs based on configuration
-	 */
-	private async filterUrls(urls: { loc: string; lastmod?: string }[]): Promise<string[]> {
-		let filtered = urls.map(u => u.loc);
+	private async filterFiles(files: string[]): Promise<string[]> {
+		let filtered = [...files];
 		
-		// Apply custom filters
 		if (this.config.filter && this.config.filter.length > 0) {
-			filtered = filtered.filter(url => 
-				this.config.filter!.some(pattern => pattern.test(url))
+			filtered = filtered.filter(file => 
+				this.config.filter!.some(pattern => pattern.test(file))
 			);
 		}
 		
-		// Apply date filter
-		if (this.config.since) {
-			const sinceDate = new Date(this.config.since);
-			filtered = filtered.filter((_, index) => {
-				const urlData = urls[index];
-				if (!urlData.lastmod) return true; // Include if no date info
-				const urlDate = new Date(urlData.lastmod);
-				return urlDate >= sinceDate;
-			});
-		}
-		
-		// Skip existing URLs if configured
 		if (this.config.skipExisting) {
-			const existingUrls = await this.getExistingUrls(filtered);
-			filtered = filtered.filter(url => !existingUrls.has(url));
+			const existingFiles = await this.getExistingFiles(filtered);
+			filtered = filtered.filter(file => !existingFiles.has(file));
 		}
 		
-		// Apply URL limit
-		if (this.config.maxUrls) {
-			filtered = filtered.slice(0, this.config.maxUrls);
+		if (this.config.maxFiles) {
+			filtered = filtered.slice(0, this.config.maxFiles);
 		}
 		
 		return filtered;
 	}
 
-	/**
-	 * Get existing URLs from database
-	 */
-	private async getExistingUrls(urls: string[]): Promise<Set<string>> {
+	private async getExistingFiles(files: string[]): Promise<Set<string>> {
 		try {
 			const { PrismaClient } = await import('@prisma/client');
 			const prisma = new PrismaClient();
 			
+			// Create URLs in the same format as parseMarkdownFile
+			const fileUrls = files.map(file => `file://${file}`);
+			
 			const existing = await prisma.knowledgeDocument.findMany({
-				where: { url: { in: urls }, parentId: null },
-				select: { url: true }
+				where: { 
+					url: {
+						in: fileUrls
+					},
+					parentId: null 
+				},
+				select: { 
+					url: true,
+					metadata: true
+				}
 			});
 			
 			await prisma.$disconnect();
-			return new Set(existing.map(d => d.url));
+			
+			// Map URLs back to file paths
+			const existingFiles = new Set<string>();
+			existing.forEach(doc => {
+				if (doc.url?.startsWith('file://')) {
+					const filePath = doc.url.substring(7); // Remove 'file://' prefix
+					existingFiles.add(filePath);
+				}
+			});
+			
+			this.log('info', `Found ${existingFiles.size} existing files to skip`);
+			return existingFiles;
 		} catch (error) {
-			this.log('warn', 'Failed to check existing URLs, proceeding without skip');
+			this.log('warn', `Failed to check existing files: ${error instanceof Error ? error.message : 'Unknown error'}`);
+			this.log('warn', 'Proceeding without skip - may encounter duplicate errors');
 			return new Set();
 		}
 	}
 
-	/**
-	 * Print banner and configuration
-	 */
+	private async parseMarkdownFile(filePath: string): Promise<any> {
+		const content = readFileSync(filePath, 'utf8');
+		const fileName = basename(filePath, extname(filePath));
+		const stats = await import('fs').then(fs => fs.promises.stat(filePath));
+		
+		let frontMatter: any = {};
+		let markdownContent = content;
+		
+		if (content.startsWith('---\n')) {
+			const endIndex = content.indexOf('\n---\n', 4);
+			if (endIndex !== -1) {
+				const frontMatterText = content.slice(4, endIndex);
+				markdownContent = content.slice(endIndex + 5);
+				
+				try {
+					const yaml = await import('yaml');
+					frontMatter = yaml.parse(frontMatterText);
+				} catch (error) {
+					this.log('warn', `Failed to parse frontmatter in ${filePath}: ${error}`);
+				}
+			}
+		}
+		
+		const title = frontMatter.title || fileName;
+		const summary = frontMatter.description || frontMatter.summary || this.extractSummary(markdownContent);
+		
+		return {
+			title,
+			url: `file://${filePath}`,
+			content: markdownContent,
+			summary,
+			metadata: {
+				filePath,
+				fileName,
+				language: frontMatter.lang || frontMatter.language || 'en',
+				author: frontMatter.author,
+				date: frontMatter.date,
+				tags: frontMatter.tags || [],
+				category: frontMatter.category,
+				fileSize: stats.size,
+				modifiedTime: stats.mtime,
+				createdTime: stats.ctime,
+				...frontMatter
+			}
+		};
+	}
+
+	private extractSummary(content: string): string {
+		const firstParagraph = content.split('\n\n')[0];
+		const cleaned = firstParagraph.replace(/[#*`]/g, '').trim();
+		return cleaned.length > 200 ? cleaned.substring(0, 197) + '...' : cleaned;
+	}
+
 	private printBanner(): void {
 		console.log('\n' + '='.repeat(70));
-		console.log('🚀 Enhanced Aloha Corp Blog Ingestion Tool');
+		console.log('🚀 Enhanced Markdown File Ingestion Tool');
 		console.log('='.repeat(70));
 		console.log(`📅 Started: ${new Date().toLocaleString()}`);
 		console.log(`⚙️  Configuration:`);
+		console.log(`   • Path: ${this.config.path}`);
 		console.log(`   • Concurrency: ${this.config.concurrency}`);
 		console.log(`   • Delay: ${this.config.delayMs}ms`);
 		console.log(`   • Generate Embeddings: ${this.config.generateEmbeddings ? '✅' : '❌'}`);
 		console.log(`   • Chunk Documents: ${this.config.chunkLargeDocuments ? '✅' : '❌'}`);
 		console.log(`   • Skip Existing: ${this.config.skipExisting ? '✅' : '❌'}`);
-		console.log(`   • Max URLs: ${this.config.maxUrls || 'No limit'}`);
+		console.log(`   • Max Files: ${this.config.maxFiles || 'No limit'}`);
 		console.log(`   • Retry Failed: ${this.config.retryFailed ? '✅' : '❌'}`);
 		console.log(`   • Max Retries: ${this.config.maxRetries}`);
 		console.log('='.repeat(70) + '\n');
 	}
 
-	/**
-	 * Print pre-ingestion statistics
-	 */
 	private async printPreIngestionStats(): Promise<void> {
 		try {
 			const stats = await this.ingestionService.getIngestionStats();
@@ -502,15 +533,12 @@ class EnhancedAlohaIngestionService {
 				});
 			}
 			
-			console.log(''); // Empty line
+			console.log('');
 		} catch (error) {
 			this.log('warn', 'Could not fetch pre-ingestion statistics');
 		}
 	}
 
-	/**
-	 * Print final results and statistics
-	 */
 	private async printFinalResults(): Promise<void> {
 		const duration = Date.now() - this.startTime;
 		const stats = await this.calculateDetailedStats();
@@ -519,27 +547,23 @@ class EnhancedAlohaIngestionService {
 		console.log('🎉 Ingestion Results');
 		console.log('='.repeat(70));
 		
-		// Basic statistics
 		console.log(`⏱️  Duration: ${this.formatDuration(duration)}`);
-		console.log(`📄 URLs Processed: ${stats.processedUrls.toLocaleString()}`);
-		console.log(`✅ Successful: ${stats.successfulUrls.toLocaleString()}`);
-		console.log(`❌ Failed: ${stats.failedUrls.toLocaleString()}`);
-		console.log(`⏭️  Skipped: ${stats.skippedUrls.toLocaleString()}`);
+		console.log(`📄 Files Processed: ${stats.processedFiles.toLocaleString()}`);
+		console.log(`✅ Successful: ${stats.successfulFiles.toLocaleString()}`);
+		console.log(`❌ Failed: ${stats.failedFiles.toLocaleString()}`);
+		console.log(`⏭️  Skipped: ${stats.skippedFiles.toLocaleString()}`);
 		
-		// Performance metrics
-		console.log(`📈 Average Processing Time: ${stats.averageProcessingTime.toFixed(2)}s per URL`);
+		console.log(`📈 Average Processing Time: ${stats.averageProcessingTime.toFixed(2)}s per file`);
 		console.log(`💾 Memory Usage: ${stats.memoryUsage.percentage.toFixed(1)}% (${this.formatBytes(stats.memoryUsage.used)}/${this.formatBytes(stats.memoryUsage.total)})`);
 		
-		// Document statistics
 		console.log(`📝 New Documents Created: ${stats.newDocuments.toLocaleString()}`);
 		console.log(`🧠 Documents with Embeddings: ${stats.documentsWithEmbeddings.toLocaleString()}`);
 		console.log(`📑 Total Chunks Created: ${stats.totalChunks.toLocaleString()}`);
 		
-		// Error summary
 		if (stats.errors.length > 0) {
 			console.log(`\n❌ Errors (showing first 10):`);
 			stats.errors.slice(0, 10).forEach((error, i) => {
-				console.log(`   ${i + 1}. ${error.url.substring(0, 60)}${error.url.length > 60 ? '...' : ''}`);
+				console.log(`   ${i + 1}. ${error.file.substring(0, 60)}${error.file.length > 60 ? '...' : ''}`);
 				console.log(`      Error: ${error.error} (${error.attempts} attempts)`);
 			});
 			
@@ -551,9 +575,6 @@ class EnhancedAlohaIngestionService {
 		console.log('='.repeat(70) + '\n');
 	}
 
-	/**
-	 * Export results to file
-	 */
 	private async exportResults(): Promise<void> {
 		const stats = await this.calculateDetailedStats();
 		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -581,39 +602,33 @@ class EnhancedAlohaIngestionService {
 		}
 	}
 
-	/**
-	 * Generate CSV report
-	 */
 	private generateCSVReport(stats: DetailedStats): string {
 		const lines = [
-			'URL,Status,Attempts,Error',
-			...stats.urlsByStatus.completed.map(url => `"${url}",completed,1,`),
-			...stats.errors.map(error => `"${error.url}",failed,${error.attempts},"${error.error.replace(/"/g, '""')}"`),
-			...stats.urlsByStatus.skipped.map(url => `"${url}",skipped,0,`),
+			'File,Status,Attempts,Error',
+			...stats.filesByStatus.completed.map(file => `"${file}",completed,1,`),
+			...stats.errors.map(error => `"${error.file}",failed,${error.attempts},"${error.error.replace(/"/g, '""')}"`),
+			...stats.filesByStatus.skipped.map(file => `"${file}",skipped,0,`),
 		];
 		return lines.join('\n');
 	}
 
-	/**
-	 * Generate text report
-	 */
 	private generateTextReport(stats: DetailedStats): string {
 		return `
-Aloha Corp Blog Ingestion Report
+Markdown File Ingestion Report
 Generated: ${new Date().toLocaleString()}
 
 SUMMARY
 =======
-Total URLs: ${stats.totalUrls}
-Processed: ${stats.processedUrls}
-Successful: ${stats.successfulUrls}
-Failed: ${stats.failedUrls}
-Skipped: ${stats.skippedUrls}
+Total Files: ${stats.totalFiles}
+Processed: ${stats.processedFiles}
+Successful: ${stats.successfulFiles}
+Failed: ${stats.failedFiles}
+Skipped: ${stats.skippedFiles}
 
 PERFORMANCE
 ===========
 Total Processing Time: ${this.formatDuration(stats.totalProcessingTime)}
-Average Time per URL: ${stats.averageProcessingTime.toFixed(2)}s
+Average Time per File: ${stats.averageProcessingTime.toFixed(2)}s
 Memory Usage: ${stats.memoryUsage.percentage.toFixed(1)}%
 
 DOCUMENTS
@@ -624,55 +639,49 @@ Total Chunks: ${stats.totalChunks}
 
 ERRORS
 ======
-${stats.errors.map(e => `${e.url}: ${e.error} (${e.attempts} attempts)`).join('\n')}
+${stats.errors.map(e => `${e.file}: ${e.error} (${e.attempts} attempts)`).join('\n')}
 `.trim();
 	}
 
-	/**
-	 * Calculate detailed statistics
-	 */
 	private async calculateDetailedStats(): Promise<DetailedStats> {
 		const memoryUsage = process.memoryUsage();
 		
 		return {
-			totalUrls: this.state.totalUrls,
-			processedUrls: this.state.processedUrls.length,
-			successfulUrls: this.state.successfulUrls.length,
-			failedUrls: this.state.failedUrls.length,
-			skippedUrls: 0, // Calculate based on existing URLs
-			newDocuments: this.state.successfulUrls.length, // Simplified
+			totalFiles: this.state.totalFiles,
+			processedFiles: this.state.processedFiles.length,
+			successfulFiles: this.state.successfulFiles.length,
+			failedFiles: this.state.failedFiles.length,
+			skippedFiles: 0,
+			newDocuments: this.state.successfulFiles.length,
 			updatedDocuments: 0,
-			documentsWithEmbeddings: this.config.generateEmbeddings ? this.state.successfulUrls.length : 0,
-			totalChunks: 0, // Would need to query database for accurate count
-			averageProcessingTime: this.state.processedUrls.length > 0 ? 
-				(Date.now() - this.state.startTime) / 1000 / this.state.processedUrls.length : 0,
+			documentsWithEmbeddings: this.config.generateEmbeddings ? this.state.successfulFiles.length : 0,
+			totalChunks: 0,
+			averageProcessingTime: this.state.processedFiles.length > 0 ? 
+				(Date.now() - this.state.startTime) / 1000 / this.state.processedFiles.length : 0,
 			totalProcessingTime: Date.now() - this.state.startTime,
 			memoryUsage: {
 				used: memoryUsage.heapUsed,
 				total: memoryUsage.heapTotal,
 				percentage: (memoryUsage.heapUsed / memoryUsage.heapTotal) * 100
 			},
-			errors: this.state.failedUrls,
-			urlsByStatus: {
+			errors: this.state.failedFiles,
+			filesByStatus: {
 				pending: [],
 				processing: [],
-				completed: this.state.successfulUrls,
-				failed: this.state.failedUrls.map(f => f.url),
+				completed: this.state.successfulFiles,
+				failed: this.state.failedFiles.map(f => f.file),
 				skipped: []
 			}
 		};
 	}
 
-	/**
-	 * State management methods
-	 */
 	private createInitialState(): IngestionState {
 		return {
 			startTime: Date.now(),
-			totalUrls: 0,
-			processedUrls: [],
-			failedUrls: [],
-			successfulUrls: [],
+			totalFiles: 0,
+			processedFiles: [],
+			failedFiles: [],
+			successfulFiles: [],
 			currentPhase: 'initializing',
 			completed: false,
 			lastSaved: Date.now(),
@@ -701,9 +710,6 @@ ${stats.errors.map(e => `${e.url}: ${e.error} (${e.attempts} attempts)`).join('\
 		}
 	}
 
-	/**
-	 * Store a document in the database
-	 */
 	private async storeDocument(
 		content: any,
 		options: {
@@ -716,25 +722,22 @@ ${stats.errors.map(e => `${e.url}: ${e.error} (${e.attempts} attempts)`).join('\
 		const {
 			generateEmbeddings = true,
 			chunkLargeDocuments = true,
-			sourceType = 'blog',
-			sourceDomain = 'blog.aloha-corp.com'
+			sourceType = 'markdown',
+			sourceDomain = 'local'
 		} = options;
 
 		const { PrismaClient } = await import('@prisma/client');
 		const prisma = new PrismaClient();
 		
 		try {
-			// Check if document should be chunked
 			const shouldChunk = chunkLargeDocuments && content.content.length > 3000;
 			const documentIds: string[] = [];
 
 			if (shouldChunk) {
-				// Store as chunked documents
 				const { ContentFetcherService } = await import('../src/services/content-fetcher.service');
 				const contentFetcher = new ContentFetcherService();
 				const chunks = contentFetcher.chunkContent(content.content);
 
-				// First create parent document
 				const parentDocument = await prisma.knowledgeDocument.create({
 					data: {
 						title: content.title,
@@ -751,7 +754,6 @@ ${stats.errors.map(e => `${e.url}: ${e.error} (${e.attempts} attempts)`).join('\
 
 				documentIds.push(parentDocument.id);
 
-				// Create chunk documents
 				for (const chunk of chunks) {
 					let embedding: number[] | undefined;
 
@@ -793,7 +795,6 @@ ${stats.errors.map(e => `${e.url}: ${e.error} (${e.attempts} attempts)`).join('\
 					documentIds.push(chunkDoc.id);
 				}
 			} else {
-				// Store as single document
 				let embedding: number[] | undefined;
 
 				if (generateEmbeddings && this.embeddingService.isEnabled()) {
@@ -833,9 +834,6 @@ ${stats.errors.map(e => `${e.url}: ${e.error} (${e.attempts} attempts)`).join('\
 		}
 	}
 
-	/**
-	 * Get the embedding model name from environment or default
-	 */
 	private getEmbeddingModel(): string {
 		const provider = process.env.LLM_PROVIDER || "openai";
 		switch (provider) {
@@ -847,21 +845,18 @@ ${stats.errors.map(e => `${e.url}: ${e.error} (${e.attempts} attempts)`).join('\
 		}
 	}
 
-	/**
-	 * Utility methods
-	 */
-	private handleUrlError(url: string, error: unknown): void {
+	private handleFileError(file: string, error: unknown): void {
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 		
-		let failedItem = this.state.failedUrls.find(f => f.url === url);
+		let failedItem = this.state.failedFiles.find(f => f.file === file);
 		if (failedItem) {
 			failedItem.attempts++;
 			failedItem.lastError = errorMessage;
 		} else {
-			this.state.failedUrls.push({ url, attempts: 1, lastError: errorMessage });
+			this.state.failedFiles.push({ file, attempts: 1, lastError: errorMessage });
 		}
 		
-		this.log('error', `Failed to process ${url}: ${errorMessage}`);
+		this.log('error', `Failed to process ${file}: ${errorMessage}`);
 	}
 
 	private handleError(message: string, error: unknown): void {
@@ -878,7 +873,6 @@ ${stats.errors.map(e => `${e.url}: ${e.error} (${e.attempts} attempts)`).join('\
 		console.log(logMessage);
 		
 		if (this.config.logToFile) {
-			// In a real implementation, you'd use a proper logging library
 			try {
 				writeFileSync(this.config.logFile, logMessage + '\n', { flag: 'a' });
 			} catch (error) {
@@ -924,7 +918,6 @@ ${stats.errors.map(e => `${e.url}: ${e.error} (${e.attempts} attempts)`).join('\
 	}
 }
 
-// CLI argument parsing
 function parseArguments(): IngestionConfig {
 	const args = process.argv.slice(2);
 	const config: IngestionConfig = {
@@ -933,6 +926,7 @@ function parseArguments(): IngestionConfig {
 		quiet: false,
 		concurrency: 3,
 		delayMs: 1000,
+		path: process.cwd(),
 		skipExisting: true,
 		generateEmbeddings: true,
 		chunkLargeDocuments: true,
@@ -942,9 +936,9 @@ function parseArguments(): IngestionConfig {
 		exportResults: false,
 		exportFormat: 'json',
 		logToFile: true,
-		stateFile: join(process.cwd(), 'ingestion-state.json'),
-		logFile: join(process.cwd(), 'logs', `ingestion-${new Date().toISOString().slice(0, 10)}.log`),
-		exportFile: join(process.cwd(), 'ingestion-results-{{timestamp}}.json')
+		stateFile: join(process.cwd(), 'markdown-ingestion-state.json'),
+		logFile: join(process.cwd(), 'logs', `markdown-ingestion-${new Date().toISOString().slice(0, 10)}.log`),
+		exportFile: join(process.cwd(), 'markdown-ingestion-results-{{timestamp}}.json')
 	};
 
 	for (let i = 0; i < args.length; i++) {
@@ -988,20 +982,20 @@ function parseArguments(): IngestionConfig {
 				config.exportFormat = 'txt';
 				config.exportFile = config.exportFile.replace('.json', '.txt');
 				break;
+			case '--path':
+				config.path = args[++i];
+				break;
 			case '--concurrency':
 				config.concurrency = parseInt(args[++i]) || 3;
 				break;
 			case '--delay':
 				config.delayMs = parseInt(args[++i]) || 1000;
 				break;
-			case '--max-urls':
-				config.maxUrls = parseInt(args[++i]);
+			case '--max-files':
+				config.maxFiles = parseInt(args[++i]);
 				break;
 			case '--max-retries':
 				config.maxRetries = parseInt(args[++i]) || 3;
-				break;
-			case '--since':
-				config.since = args[++i];
 				break;
 			case '--filter':
 				const pattern = args[++i];
@@ -1037,10 +1031,10 @@ function parseArguments(): IngestionConfig {
 
 function printHelp(): void {
 	console.log(`
-🚀 Enhanced Aloha Corp Blog Ingestion Tool
+🚀 Enhanced Markdown File Ingestion Tool
 
 USAGE:
-  bun scripts/ingest-aloha-blog.ts [OPTIONS]
+  bun scripts/ingest-markdown.ts [OPTIONS]
 
 OPTIONS:
   --dry-run                     Preview what would be ingested without making changes
@@ -1051,18 +1045,18 @@ OPTIONS:
   Content Options:
   --no-embeddings              Don't generate embeddings
   --no-chunks                  Don't chunk large documents  
-  --no-skip-existing           Process all URLs (don't skip existing)
-  --no-retry                   Don't retry failed URLs
+  --no-skip-existing           Process all files (don't skip existing)
+  --no-retry                   Don't retry failed files
   
   Performance Options:
   --concurrency <num>          Number of concurrent requests (default: 3)
   --delay <ms>                 Delay between batches in milliseconds (default: 1000)
-  --max-retries <num>          Maximum retry attempts for failed URLs (default: 3)
+  --max-retries <num>          Maximum retry attempts for failed files (default: 3)
   
-  Filtering Options:
-  --max-urls <num>             Limit number of URLs to process
-  --since <date>               Only process URLs modified after this date (YYYY-MM-DD)
-  --filter <pattern>           Only process URLs matching regex pattern (can use multiple times)
+  Path Options:
+  --path <path>                Path to scan for markdown files (default: current directory)
+  --max-files <num>            Limit number of files to process
+  --filter <pattern>           Only process files matching regex pattern (can use multiple times)
   
   Export Options:
   --export                     Export results as JSON
@@ -1077,28 +1071,27 @@ OPTIONS:
   --help, -h                   Show this help message
 
 EXAMPLES:
-  # Basic ingestion
-  bun scripts/ingest-aloha-blog.ts
+  # Basic ingestion from current directory
+  bun scripts/ingest-markdown.ts
   
   # Dry run to see what would be processed
-  bun scripts/ingest-aloha-blog.ts --dry-run
+  bun scripts/ingest-markdown.ts --dry-run
   
-  # Process only recent posts with higher concurrency
-  bun scripts/ingest-aloha-blog.ts --since 2024-01-01 --concurrency 5
+  # Process files from specific directory
+  bun scripts/ingest-markdown.ts --path ./docs --concurrency 5
   
   # Resume previous ingestion and export results
-  bun scripts/ingest-aloha-blog.ts --resume --export-csv
+  bun scripts/ingest-markdown.ts --resume --export-csv
   
-  # Process specific URL patterns only
-  bun scripts/ingest-aloha-blog.ts --filter "tutorial" --filter "guide" --max-urls 50
+  # Process specific file patterns only
+  bun scripts/ingest-markdown.ts --filter "README" --filter "guide" --max-files 20
 `);
 }
 
-// Main execution
 async function main(): Promise<void> {
 	try {
 		const config = parseArguments();
-		const service = new EnhancedAlohaIngestionService(config);
+		const service = new EnhancedMarkdownIngestionService(config);
 		await service.run();
 	} catch (error) {
 		console.error('❌ Fatal error:', error instanceof Error ? error.message : error);
@@ -1106,7 +1099,6 @@ async function main(): Promise<void> {
 	}
 }
 
-// Handle graceful shutdown
 process.on('SIGINT', () => {
 	console.log('\n⏹️  Ingestion interrupted. State has been saved.');
 	console.log('   Use --resume to continue from where you left off.');
@@ -1118,5 +1110,4 @@ process.on('SIGTERM', () => {
 	process.exit(0);
 });
 
-// Run the script
 main().catch(console.error);
