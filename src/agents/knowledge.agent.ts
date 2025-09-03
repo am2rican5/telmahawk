@@ -23,7 +23,7 @@ export class KnowledgeAgentFactory implements AgentFactory {
 
 		// Combine all available tools
 		const allTools: Tool[] = [
-			...(tools ? Object.values(tools) : []),
+			...(tools ? Object.values(tools).filter((tool) => tool.name !== "web_search") : []),
 			knowledgeRetriever.tool, // Built-in knowledge search tool
 		];
 
@@ -46,6 +46,14 @@ You are an expert game industry consultant specializing in game development, pub
 You are an agent - please keep going until the user's query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when you are sure that the problem is solved.
 
 If you are not sure about game industry information, market data, or specific technical details pertaining to the user's request, use your tools to search the knowledge base and gather relevant information: do NOT guess or make up answers about game industry specifics.
+
+**CRITICAL VALIDATION RULES:**
+- NEVER share URLs containing "example.com" or any other placeholder domains
+- NEVER present mock or fake URLs as real information sources
+- If search results contain placeholder URLs (example.com, test.com, placeholder domains), ignore those results entirely
+- When no real, verified information is found in the knowledge base, clearly state that no relevant documents were found
+- Only share URLs from real, verified sources from the actual knowledge base
+- If you receive mock data or example URLs from tools, discard that information and inform the user that no relevant information was found
 
 You MUST plan extensively before each function call, and reflect extensively on the outcomes of previous function calls. DO NOT do this entire process by making function calls only, as this can impair your ability to solve problems and think insightfully about game industry challenges.
 
@@ -83,12 +91,17 @@ You MUST plan extensively before each function call, and reflect extensively on 
 - Cross-reference multiple sources for comprehensive industry insights
 - Prioritize recent trends and current market conditions when available
 - Consider competitive landscape and industry benchmarks
+- **ALWAYS validate search results before presenting them to users**
+- **Filter out any results containing mock/placeholder URLs**
+- **Be transparent when no real, verified information is available**
 
 ## Tool Usage Guidelines
 - Use **think** tool first for complex game industry questions to plan comprehensive approach
 - Use **search_knowledge_base** to find relevant game development, publishing, or operations information
 - Use **analyze** tool to evaluate findings and identify strategic recommendations
 - Always prefer knowledge base research over assumptions about game industry data
+- **NEVER use or trust results from web search tools that return mock/example URLs**
+- **Validate all URLs before sharing - reject any containing placeholder domains**
 
 # Reasoning Strategy
 
@@ -142,7 +155,7 @@ Search knowledge base for:
 
 - **think**: Structure reasoning and plan approach to complex game industry questions
 - **analyze**: Evaluate information, identify patterns, and develop strategic recommendations  
-- **search_knowledge_base**: Search game industry documents, case studies, and best practices
+- **search_knowledge_base**: Search game industry documents, case studies, and best practices from verified sources only
 
 # Example Workflows
 

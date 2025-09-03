@@ -166,7 +166,7 @@ export class VoltagentService {
 
 			const conversationId =
 				input.conversationId || this.generateConversationId(input.userId, agentType);
-			
+
 			logger.debug(`Using conversation ID: ${conversationId} for user ${input.userId}`, {
 				hasMemory: this.memory !== null,
 				agentType,

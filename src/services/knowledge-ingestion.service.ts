@@ -21,7 +21,12 @@ export interface IngestionOptions {
 	chunkLargeDocuments?: boolean;
 	skipExisting?: boolean;
 	onProgress?: (progress: {
-		phase: "fetching_sitemap" | "fetching_newsletter_list" | "fetching_content" | "generating_embeddings" | "storing_documents";
+		phase:
+			| "fetching_sitemap"
+			| "fetching_newsletter_list"
+			| "fetching_content"
+			| "generating_embeddings"
+			| "storing_documents";
 		completed: number;
 		total: number;
 		currentItem?: string;
@@ -147,7 +152,7 @@ export class KnowledgeIngestionService {
 		try {
 			// Initialize services
 			await this.initialize();
-			
+
 			// Phase 1: Fetch newsletter list
 			options.onProgress?.({
 				phase: "fetching_newsletter_list",
@@ -391,18 +396,18 @@ export class KnowledgeIngestionService {
 	 */
 	private async storeDocument(
 		content: FetchedContent,
-		options: { 
-			generateEmbeddings?: boolean; 
-			chunkLargeDocuments?: boolean; 
-			sourceType?: string; 
+		options: {
+			generateEmbeddings?: boolean;
+			chunkLargeDocuments?: boolean;
+			sourceType?: string;
 			sourceDomain?: string;
 		} = {}
 	): Promise<string[]> {
-		const { 
-			generateEmbeddings = true, 
-			chunkLargeDocuments = true, 
-			sourceType, 
-			sourceDomain 
+		const {
+			generateEmbeddings = true,
+			chunkLargeDocuments = true,
+			sourceType,
+			sourceDomain,
 		} = options;
 
 		// Ensure services are initialized

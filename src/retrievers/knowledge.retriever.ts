@@ -86,7 +86,8 @@ export class KnowledgeRetriever extends BaseRetriever {
 			logger.info("RAG retrieval started", { query: query.substring(0, 100) });
 
 			const searchOptions = this.buildSearchOptions(options, query);
-			const results = await this.hybridSearch(query, searchOptions);
+			const rawResults = await this.hybridSearch(query, searchOptions);
+			const results = this.filterValidResults(rawResults);
 
 			if (results.length === 0) {
 				return await this.handleNoResults(query, searchOptions);
@@ -516,6 +517,38 @@ export class KnowledgeRetriever extends BaseRetriever {
 	}
 
 	/**
+	 * Validate URL to ensure it's not a placeholder/mock URL
+	 */
+	private isValidRealURL(url?: string): boolean {
+		if (!url) return false;
+
+		const placeholderDomains = [
+			"example.com",
+			"example.org",
+			"example.net",
+			"test.com",
+			"placeholder.com",
+			"mock.com",
+			"demo.com",
+		];
+
+		return !placeholderDomains.some((domain) => url.includes(domain));
+	}
+
+	/**
+	 * Filter out results with placeholder/mock URLs
+	 */
+	private filterValidResults(results: KnowledgeDocument[]): KnowledgeDocument[] {
+		return results.filter((doc) => {
+			// If there's a URL, validate it's not a placeholder
+			if (doc.url && !this.isValidRealURL(doc.url)) {
+				return false;
+			}
+			return true;
+		});
+	}
+
+	/**
 	 * Format search results for RAG context
 	 */
 	private formatResultsForRAG(results: KnowledgeDocument[]): string {
@@ -587,9 +620,7 @@ ${doc.summary ? `Summary: ${doc.summary}` : ""}`;
 				searchMode: z
 					.enum(["text", "vector", "hybrid"])
 					.optional()
-					.describe(
-						"Search method to use (default: 'hybrid')"
-					),
+					.describe("Search method to use (default: 'hybrid')"),
 				dateFrom: z.string().optional().describe("Filter results from this date (ISO string)"),
 				dateTo: z.string().optional().describe("Filter results to this date (ISO string)"),
 			}),
@@ -607,7 +638,8 @@ ${doc.summary ? `Summary: ${doc.summary}` : ""}`;
 						recencyWeight: 0.2,
 					};
 
-					const results = await this.hybridSearch(args.query, searchOptions);
+					const rawResults = await this.hybridSearch(args.query, searchOptions);
+					const results = this.filterValidResults(rawResults);
 
 					if (results.length === 0) {
 						return {
