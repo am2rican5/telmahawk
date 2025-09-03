@@ -2,6 +2,7 @@ import type TelegramBot from "node-telegram-bot-api";
 import type { Message } from "node-telegram-bot-api";
 import type { SessionManager } from "../bot/session";
 import { BotLogger } from "../utils/logger";
+import { StatusIndicatorService } from "./status-indicator.service";
 import { type AgentResponse, type ConversationInput, VoltagentService } from "./voltagent.service";
 
 const logger = new BotLogger("KnowledgeAgentBridge");
@@ -14,11 +15,13 @@ export interface KnowledgeSession {
 export class AgentBridgeService {
 	private static instance: AgentBridgeService;
 	private voltagentService: VoltagentService;
+	private statusService: StatusIndicatorService;
 	private sessionManager!: SessionManager;
 	private knowledgeSessions: Map<string, KnowledgeSession> = new Map();
 
 	private constructor() {
 		this.voltagentService = VoltagentService.getInstance();
+		this.statusService = StatusIndicatorService.getInstance();
 	}
 
 	public static getInstance(): AgentBridgeService {
@@ -73,7 +76,13 @@ export class AgentBridgeService {
 		}
 
 		try {
-			await bot.sendChatAction(msg.chat.id, "typing");
+			// Start enhanced status indicator
+			await this.statusService.startProcessingStatus(
+				bot,
+				msg.chat.id,
+				userId,
+				"🤖 질문을 분석하고 있습니다..."
+			);
 
 			// Get or create knowledge session
 			const sessionKey = this.getUserSessionKey(userId);
@@ -102,8 +111,19 @@ export class AgentBridgeService {
 				conversationId: knowledgeSession.conversationId,
 			};
 
+			// Update status to show agent processing
+			await this.statusService.updateStatus(
+				bot,
+				msg.chat.id,
+				userId,
+				"🧠 AI 에이전트가 전문가 팀과 상담하고 있습니다..."
+			);
+
 			// Always use knowledge agent
 			const response = await this.voltagentService.processMessage(input, "knowledge");
+
+			// Stop status indicator (will be deleted automatically)
+			await this.statusService.stopProcessingStatus(bot, msg.chat.id, userId);
 
 			await this.sendFormattedResponse(bot, msg.chat.id, response);
 
@@ -113,6 +133,8 @@ export class AgentBridgeService {
 
 			return true;
 		} catch (error) {
+			// Make sure to stop status indicator on error
+			await this.statusService.stopProcessingStatus(bot, msg.chat.id, userId);
 			logger.error("Error processing knowledge query", error);
 
 			await bot.sendMessage(
@@ -134,14 +156,20 @@ export class AgentBridgeService {
 		msg: Message,
 		query: string
 	): Promise<void> {
-		try {
-			await bot.sendChatAction(msg.chat.id, "typing");
+		const userId = msg.from?.id?.toString();
+		if (!userId) {
+			await bot.sendMessage(msg.chat.id, "Unable to identify user for search.");
+			return;
+		}
 
-			const userId = msg.from?.id?.toString();
-			if (!userId) {
-				await bot.sendMessage(msg.chat.id, "Unable to identify user for search.");
-				return;
-			}
+		try {
+			// Start enhanced status indicator for search
+			await this.statusService.startProcessingStatus(
+				bot,
+				msg.chat.id,
+				userId,
+				`🔍 "${query}" 검색 중...`
+			);
 
 			// Get or create knowledge session for search
 			const sessionKey = this.getUserSessionKey(userId);
@@ -161,9 +189,24 @@ export class AgentBridgeService {
 				conversationId: knowledgeSession.conversationId,
 			};
 
+			// Update status
+			await this.statusService.updateStatus(
+				bot,
+				msg.chat.id,
+				userId,
+				"📚 지식 베이스에서 관련 문서를 찾고 있습니다..."
+			);
+
 			const response = await this.voltagentService.processMessage(input, "knowledge");
+
+			// Stop status indicator
+			await this.statusService.stopProcessingStatus(bot, msg.chat.id, userId);
+
 			await this.sendFormattedResponse(bot, msg.chat.id, response);
 		} catch (error) {
+			// Clean up status on error
+			await this.statusService.stopProcessingStatus(bot, msg.chat.id, userId);
+
 			logger.error("Error performing knowledge search", error);
 			await bot.sendMessage(
 				msg.chat.id,

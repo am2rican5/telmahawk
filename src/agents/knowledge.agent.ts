@@ -2,11 +2,11 @@ import type { LanguageModelV2 } from "@ai-sdk/provider";
 import { Agent, createReasoningTools, type Tool, type Toolkit } from "@voltagent/core";
 import type { SupabaseMemory } from "@voltagent/supabase";
 import type { VercelAIProvider } from "@voltagent/vercel-ai";
-import type { AgentFactory } from "./types";
-import { ResearchSubAgentFactory } from "./sub-agents/research.sub-agent";
 import { AnalysisSubAgentFactory } from "./sub-agents/analysis.sub-agent";
-import { ValidationSubAgentFactory } from "./sub-agents/validation.sub-agent";
+import { ResearchSubAgentFactory } from "./sub-agents/research.sub-agent";
 import { SynthesisSubAgentFactory } from "./sub-agents/synthesis.sub-agent";
+import { ValidationSubAgentFactory } from "./sub-agents/validation.sub-agent";
+import type { AgentFactory } from "./types";
 
 export class KnowledgeAgentFactory implements AgentFactory {
 	create(
@@ -130,16 +130,26 @@ Before delegating any tasks, you must:
 ## Critical Validation Rules (Pass to All Specialists)
 - **NO PLACEHOLDER URLS**: Never accept or present example.com, test.com, etc.
 - **SOURCE VERIFICATION**: Only use verified, real knowledge base sources
+- **PRESERVE URLS AND SOURCES**: Always maintain document URLs, titles, and metadata throughout workflow
 - **ACCURACY FIRST**: When in doubt, request additional validation
 - **TRANSPARENCY**: Clearly indicate when information is limited or uncertain
+
+## Source Preservation Requirements (MANDATORY)
+All specialists MUST:
+- **Preserve URLs**: Maintain all document URLs from search results
+- **Track Metadata**: Keep document titles, creation dates, and source types
+- **Link Information**: Connect every fact/insight to its original source document
+- **Format for Access**: Present URLs in Telegram-friendly clickable format
 
 ## Communication Standards
 
 ### With Specialists
 - Provide clear instructions and context
 - Set specific deliverable expectations
+- **Require source preservation**: Always request URLs and metadata in outputs
 - Request structured outputs for easy integration
 - Give feedback on quality and completeness
+- **Validate source citations**: Ensure all specialists include proper source references
 
 ### With Users
 - Present information clearly and professionally

@@ -1,9 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import { ContentFetcherService, type FetchedContent } from "./content-fetcher.service";
-import { PlaywrightContentFetcherService } from "./playwright-content-fetcher.service";
 import { EmbeddingStorageService } from "./embedding-storage.service";
+import { PlaywrightContentFetcherService } from "./playwright-content-fetcher.service";
 import { SitemapService, type SitemapUrl } from "./sitemap.service";
-import { StibeeService, type StibeeNewsletterItem } from "./stibee.service";
+import { type StibeeNewsletterItem, StibeeService } from "./stibee.service";
 
 export interface IngestionResult {
 	totalUrls: number;

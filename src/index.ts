@@ -1,6 +1,7 @@
 import { BotInstance } from "./bot/bot";
 import config, { validateConfig } from "./config/config";
 import { createServer } from "./server/app";
+import { StatusIndicatorService } from "./services/status-indicator.service";
 import { VoltagentService } from "./services/voltagent.service";
 import { BotLogger } from "./utils/logger";
 
@@ -19,6 +20,15 @@ async function startBot(): Promise<void> {
 		}
 
 		const bot = BotInstance.getInstance();
+
+		// Initialize status indicator cleanup
+		const statusService = StatusIndicatorService.getInstance();
+		const cleanupInterval = setInterval(() => {
+			statusService.cleanup();
+		}, 60000); // Clean up every minute
+
+		// Store cleanup interval for graceful shutdown
+		(global as any).statusCleanupInterval = cleanupInterval;
 
 		if (config.bot.webhook) {
 			logger.info("Starting bot in webhook mode");
@@ -50,6 +60,13 @@ async function gracefulShutdown(signal: string): Promise<void> {
 	logger.info(`Received ${signal}, shutting down gracefully...`);
 
 	try {
+		// Clean up status service interval
+		const cleanupInterval = (global as any).statusCleanupInterval;
+		if (cleanupInterval) {
+			clearInterval(cleanupInterval);
+			logger.info("Status cleanup interval cleared");
+		}
+
 		const bot = BotInstance.getInstance();
 
 		if (config.bot.webhook) {
