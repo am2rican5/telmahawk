@@ -166,9 +166,15 @@ export class VoltagentService {
 
 			const conversationId =
 				input.conversationId || this.generateConversationId(input.userId, agentType);
+			
+			logger.debug(`Using conversation ID: ${conversationId} for user ${input.userId}`, {
+				hasMemory: this.memory !== null,
+				agentType,
+			});
 
 			try {
 				const response = await agent.generateText(input.message, {
+					userId: input.userId,
 					conversationId,
 				});
 
@@ -178,6 +184,8 @@ export class VoltagentService {
 					responseLength: content.length,
 					agentType,
 					hasMemory: this.memory !== null,
+					conversationId,
+					memoryWorking: true,
 				});
 
 				return {
@@ -188,9 +196,24 @@ export class VoltagentService {
 			} catch (agentError) {
 				// If memory fails, try without conversation context
 				if (this.memory && agentError.message?.includes("memory")) {
-					logger.warn("Memory error detected, retrying without conversation context", agentError);
-					const response = await agent.generateText(input.message);
+					logger.warn("Memory error detected, retrying with same context parameters", {
+						error: agentError.message,
+						userId: input.userId,
+						conversationId,
+						agentType,
+					});
+					const response = await agent.generateText(input.message, {
+						userId: input.userId,
+						conversationId,
+					});
 					const content = response.text || "I'm sorry, I couldn't generate a response.";
+
+					logger.info(`Fallback response generated for user ${input.userId}`, {
+						responseLength: content.length,
+						agentType,
+						conversationId,
+						memoryWorking: false,
+					});
 
 					return {
 						content,

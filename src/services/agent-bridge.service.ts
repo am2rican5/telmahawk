@@ -81,7 +81,7 @@ export class AgentBridgeService {
 
 			if (!knowledgeSession) {
 				knowledgeSession = {
-					conversationId: this.generateConversationId(userId),
+					conversationId: `tg-${userId}-knowledge`,
 					lastActivity: Date.now(),
 				};
 				this.knowledgeSessions.set(sessionKey, knowledgeSession);
@@ -143,10 +143,22 @@ export class AgentBridgeService {
 				return;
 			}
 
+			// Get or create knowledge session for search
+			const sessionKey = this.getUserSessionKey(userId);
+			let knowledgeSession = this.knowledgeSessions.get(sessionKey);
+
+			if (!knowledgeSession) {
+				knowledgeSession = {
+					conversationId: `tg-${userId}-knowledge`,
+					lastActivity: Date.now(),
+				};
+				this.knowledgeSessions.set(sessionKey, knowledgeSession);
+			}
+
 			const input: ConversationInput = {
 				message: `Please search for: ${query}`,
 				userId,
-				conversationId: `search-${userId}-${Date.now()}`,
+				conversationId: knowledgeSession.conversationId,
 			};
 
 			const response = await this.voltagentService.processMessage(input, "knowledge");
