@@ -3,6 +3,7 @@ import { EmbeddingToolFactory } from "./embedding.tool";
 import { EmbeddingRetrievalToolFactory } from "./embedding-retrieval.tool";
 import { KnowledgeRetrieverToolFactory } from "./knowledge-retriever.tool";
 import type { ToolFactory } from "./types";
+import { WebSearchToolFactory } from "./web-search-tool-factory";
 
 export class ToolRegistry {
 	private factories: Map<string, ToolFactory> = new Map();
@@ -15,6 +16,7 @@ export class ToolRegistry {
 		this.factories.set("embedding", new EmbeddingToolFactory());
 		this.factories.set("get_embedding", new EmbeddingRetrievalToolFactory());
 		this.factories.set("search_knowledge_base", new KnowledgeRetrieverToolFactory());
+		this.factories.set("web_search", new WebSearchToolFactory());
 	}
 
 	public register(key: string, factory: ToolFactory): void {

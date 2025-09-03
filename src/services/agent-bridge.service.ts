@@ -129,7 +129,11 @@ export class AgentBridgeService {
 		return this.knowledgeSessions.get(sessionKey) || null;
 	}
 
-	public async performKnowledgeSearch(bot: TelegramBot, msg: Message, query: string): Promise<void> {
+	public async performKnowledgeSearch(
+		bot: TelegramBot,
+		msg: Message,
+		query: string
+	): Promise<void> {
 		try {
 			await bot.sendChatAction(msg.chat.id, "typing");
 
@@ -167,6 +171,9 @@ export class AgentBridgeService {
 	): Promise<void> {
 		let formattedMessage = response.content;
 
+		// Enhanced formatting for reasoning and search results
+		formattedMessage = this.enhanceContentFormatting(formattedMessage);
+
 		// Convert markdown to HTML and sanitize
 		formattedMessage = this.convertMarkdownToHTML(formattedMessage);
 		formattedMessage = this.sanitizeHTML(formattedMessage);
@@ -191,7 +198,7 @@ export class AgentBridgeService {
 			// If HTML parsing fails, send as plain text
 			logger.warn("HTML parsing failed, sending as plain text", { error });
 			const plainMessage = this.stripHTML(formattedMessage);
-			
+
 			if (plainMessage.length <= MAX_MESSAGE_LENGTH) {
 				await bot.sendMessage(chatId, plainMessage);
 			} else {
@@ -204,38 +211,90 @@ export class AgentBridgeService {
 		}
 	}
 
+	private enhanceContentFormatting(text: string): string {
+		// Enhance reasoning step formatting
+		text = text.replace(/🤔\s*Thinking:/gi, "🤔 <b>Thinking:</b>");
+		text = text.replace(/🔍\s*Analysis:/gi, "🔍 <b>Analysis:</b>");
+		text = text.replace(/📊\s*Search Results:/gi, "📊 <b>Search Results:</b>");
+		text = text.replace(/🌐\s*Web Results:/gi, "🌐 <b>Web Results:</b>");
+		text = text.replace(/📄\s*Knowledge Base:/gi, "📄 <b>Knowledge Base:</b>");
+
+		// Enhance source indicators
+		text = text.replace(/\[Document (\d+)\]/g, "📄 <b>Document $1</b>");
+		text = text.replace(/\[Web Result (\d+)\]/g, "🌐 <b>Web Result $1</b>");
+
+		// Add visual separators for better readability
+		text = text.replace(/---/g, "━━━━━━━━━━━━━━━━━━━━");
+
+		return text;
+	}
+
 	private convertMarkdownToHTML(text: string): string {
-		// First escape HTML entities in the raw text
-		let html = this.escapeHTML(text);
-		
+		// First escape HTML entities in the raw text, but preserve our enhancements
+		let html = this.escapeHTMLPreserveEnhancements(text);
+
 		// Convert code blocks first (to avoid interfering with other formatting)
 		html = html.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, language, code) => {
 			const cleanCode = code.trim();
 			return `<pre><code>${cleanCode}</code></pre>`;
 		});
-		
+
 		// Convert inline code
 		html = html.replace(/`([^`]+)`/g, (match, code) => {
 			return `<code>${code}</code>`;
 		});
-		
-		// Convert bold text
-		html = html.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
-		
+
+		// Convert bold text (but not our already enhanced bold)
+		html = html.replace(/\*\*((?!<\/b>).*?)\*\*/g, "<b>$1</b>");
+
 		// Convert italic text
-		html = html.replace(/\*(.*?)\*/g, "<i>$1</i>");
-		html = html.replace(/_(.*?)_/g, "<i>$1</i>");
-		
+		html = html.replace(/\*((?!<\/i>).*?)\*/g, "<i>$1</i>");
+		html = html.replace(/_((?!<\/i>).*?)_/g, "<i>$1</i>");
+
 		// Convert links - [text](url)
 		html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
-		
+
+		// Convert bullet points
+		html = html.replace(/^\s*[-•*]\s+(.+)$/gm, "• $1");
+
+		// Convert numbered lists
+		html = html.replace(/^\s*(\d+)\.\s+(.+)$/gm, "$1. $2");
+
 		return html;
 	}
 
+	private escapeHTMLPreserveEnhancements(text: string): string {
+		// First, temporarily replace our enhancements with placeholders
+		const placeholders: { [key: string]: string } = {};
+		let placeholderIndex = 0;
+
+		// Preserve existing HTML tags from enhancements
+		text = text.replace(/<\/?[bi]>/g, (match) => {
+			const placeholder = `__PLACEHOLDER_${placeholderIndex++}__`;
+			placeholders[placeholder] = match;
+			return placeholder;
+		});
+
+		// Now escape HTML
+		text = text
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;")
+			.replace(/'/g, "&#39;");
+
+		// Restore placeholders
+		for (const [placeholder, original] of Object.entries(placeholders)) {
+			text = text.replace(placeholder, original);
+		}
+
+		return text;
+	}
+
 	private sanitizeHTML(text: string): string {
-		// Much simpler approach: restore only the HTML tags we created
+		// Enhanced sanitization: restore only allowed HTML tags
 		let sanitized = text;
-		
+
 		// Restore allowed HTML tags that were escaped
 		sanitized = sanitized
 			.replace(/&lt;b&gt;/g, "<b>")
@@ -251,8 +310,19 @@ export class AgentBridgeService {
 			.replace(/&lt;pre&gt;/g, "<pre>")
 			.replace(/&lt;\/pre&gt;/g, "</pre>")
 			.replace(/&lt;a href=&quot;([^&]+)&quot;&gt;/g, '<a href="$1">')
-			.replace(/&lt;\/a&gt;/g, "</a>");
-		
+			.replace(/&lt;\/a&gt;/g, "</a>")
+			.replace(/&lt;br\/?&gt;/g, "<br/>")
+			.replace(/&lt;em&gt;/g, "<em>")
+			.replace(/&lt;\/em&gt;/g, "</em>")
+			.replace(/&lt;strong&gt;/g, "<strong>")
+			.replace(/&lt;\/strong&gt;/g, "</strong>");
+
+		// Clean up any remaining double escaping
+		sanitized = sanitized
+			.replace(/&amp;nbsp;/g, " ")
+			.replace(/&amp;#39;/g, "'")
+			.replace(/&amp;quot;/g, '"');
+
 		return sanitized;
 	}
 
@@ -267,49 +337,98 @@ export class AgentBridgeService {
 
 	private stripHTML(text: string): string {
 		return text
-			.replace(/<b>(.*?)<\/b>/g, "$1") // Bold
-			.replace(/<i>(.*?)<\/i>/g, "$1") // Italic
+			.replace(/<b>(.*?)<\/b>/g, "*$1*") // Bold to markdown
+			.replace(/<i>(.*?)<\/i>/g, "_$1_") // Italic to markdown
+			.replace(/<em>(.*?)<\/em>/g, "_$1_") // Emphasis to markdown
+			.replace(/<strong>(.*?)<\/strong>/g, "*$1*") // Strong to markdown
 			.replace(/<u>(.*?)<\/u>/g, "$1") // Underline
-			.replace(/<s>(.*?)<\/s>/g, "$1") // Strikethrough
-			.replace(/<code>(.*?)<\/code>/g, "$1") // Inline code
-			.replace(/<pre><code>(.*?)<\/code><\/pre>/gs, "$1") // Code blocks
-			.replace(/<a\s[^>]*>(.*?)<\/a>/g, "$1") // Links
+			.replace(/<s>(.*?)<\/s>/g, "~$1~") // Strikethrough to markdown
+			.replace(/<code>(.*?)<\/code>/g, "`$1`") // Inline code to markdown
+			.replace(/<pre><code>(.*?)<\/code><\/pre>/gs, "```\n$1\n```") // Code blocks to markdown
+			.replace(/<a\s[^>]*href=["']([^"']*)["'][^>]*>(.*?)<\/a>/g, "$2 ($1)") // Links with URLs
+			.replace(/<br\/?>/g, "\n") // Line breaks
+			.replace(/━{10,}/g, "---") // Visual separators back to markdown
 			.replace(/&amp;/g, "&") // Unescape HTML entities
 			.replace(/&lt;/g, "<")
 			.replace(/&gt;/g, ">")
-			.replace(/&quot;/g, "\"")
-			.replace(/&#39;/g, "'");
+			.replace(/&quot;/g, '"')
+			.replace(/&#39;/g, "'")
+			.replace(/&nbsp;/g, " ");
 	}
 
 	private splitLongMessage(message: string, maxLength: number): string[] {
 		const chunks: string[] = [];
 		let currentChunk = "";
 
-		const lines = message.split("\n");
-		for (const line of lines) {
-			if (currentChunk.length + line.length + 1 > maxLength) {
+		// Try to split at natural boundaries first
+		const sections = message.split(/(?=📄|🌐|🤔|🔍|📊|━{10,})/g);
+
+		for (const section of sections) {
+			if (section.trim() === "") continue;
+
+			// If section is small enough, add it to current chunk
+			if (currentChunk.length + section.length + 1 <= maxLength) {
+				currentChunk += (currentChunk ? "\n" : "") + section;
+			} else {
+				// Save current chunk if it exists
 				if (currentChunk) {
 					chunks.push(currentChunk.trim());
 					currentChunk = "";
 				}
 
-				if (line.length > maxLength) {
-					let remainingLine = line;
-					while (remainingLine.length > maxLength) {
-						chunks.push(remainingLine.substring(0, maxLength));
-						remainingLine = remainingLine.substring(maxLength);
+				// If section itself is too long, split by lines
+				if (section.length > maxLength) {
+					const lines = section.split("\n");
+					for (const line of lines) {
+						if (currentChunk.length + line.length + 1 > maxLength) {
+							if (currentChunk) {
+								chunks.push(currentChunk.trim());
+								currentChunk = "";
+							}
+
+							if (line.length > maxLength) {
+								// Split very long lines at word boundaries
+								let remainingLine = line;
+								while (remainingLine.length > maxLength) {
+									let splitIndex = maxLength;
+									// Try to split at word boundary
+									const lastSpace = remainingLine.lastIndexOf(" ", maxLength);
+									if (lastSpace > maxLength * 0.7) {
+										splitIndex = lastSpace;
+									}
+									chunks.push(remainingLine.substring(0, splitIndex));
+									remainingLine = remainingLine.substring(splitIndex).trim();
+								}
+								currentChunk = remainingLine;
+							} else {
+								currentChunk = line;
+							}
+						} else {
+							currentChunk += (currentChunk ? "\n" : "") + line;
+						}
 					}
-					currentChunk = remainingLine;
 				} else {
-					currentChunk = line;
+					currentChunk = section;
 				}
-			} else {
-				currentChunk += (currentChunk ? "\n" : "") + line;
 			}
 		}
 
 		if (currentChunk) {
 			chunks.push(currentChunk.trim());
+		}
+
+		// Add chunk indicators if multiple chunks
+		if (chunks.length > 1) {
+			return chunks.map((chunk, index) => {
+				const indicator = `[${index + 1}/${chunks.length}]`;
+				return chunks.length > 1 && index === 0
+					? `${indicator}\n${chunk}`
+					: index > 0 && index < chunks.length - 1
+						? `${indicator}\n${chunk}`
+						: chunks.length > 1 && index === chunks.length - 1
+							? `${indicator}\n${chunk}`
+							: chunk;
+			});
 		}
 
 		return chunks;

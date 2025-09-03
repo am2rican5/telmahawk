@@ -1,6 +1,6 @@
+import { google } from "@ai-sdk/google";
 import { type Embedding, PrismaClient } from "@prisma/client";
 import { embed } from "ai";
-import { google } from "@ai-sdk/google";
 import { BotLogger } from "../utils/logger";
 
 const logger = new BotLogger("EmbeddingStorageService");
@@ -313,18 +313,20 @@ export class EmbeddingStorageService {
 			// Map task type to Google's format
 			if (taskType) {
 				const taskTypeMap: Record<string, string> = {
-					"search_query": "RETRIEVAL_QUERY",
-					"document": "RETRIEVAL_DOCUMENT", 
-					"similarity": "SEMANTIC_SIMILARITY",
-					"clustering": "CLUSTERING",
-					"classification": "CLASSIFICATION"
+					search_query: "RETRIEVAL_QUERY",
+					document: "RETRIEVAL_DOCUMENT",
+					similarity: "SEMANTIC_SIMILARITY",
+					clustering: "CLUSTERING",
+					classification: "CLASSIFICATION",
 				};
 				providerOptions.google.taskType = taskTypeMap[taskType] || "RETRIEVAL_DOCUMENT";
 			} else {
 				providerOptions.google.taskType = "RETRIEVAL_DOCUMENT";
 			}
 
-			logger.debug(`Generating embedding using Google model: ${modelName}, taskType: ${providerOptions.google.taskType}`);
+			logger.debug(
+				`Generating embedding using Google model: ${modelName}, taskType: ${providerOptions.google.taskType}`
+			);
 
 			const result = await embed({
 				model,
@@ -334,7 +336,6 @@ export class EmbeddingStorageService {
 
 			logger.debug(`Embedding generated successfully (${result.embedding.length} dimensions)`);
 			return result.embedding;
-
 		} catch (error) {
 			logger.error("Failed to generate embedding", error);
 			return null;

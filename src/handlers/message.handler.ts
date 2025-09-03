@@ -80,7 +80,10 @@ async function handleTextMessage(bot: TelegramBot, msg: TelegramBot.Message): Pr
 		const response = formatMessage("greeting", {
 			name: msg.from?.first_name || "there",
 		});
-		await bot.sendMessage(msg.chat.id, `${response}\n\nI'm your knowledge assistant! Ask me any question and I'll search through my knowledge base to help you find the information you need. 📚`);
+		await bot.sendMessage(
+			msg.chat.id,
+			`${response}\n\nI'm your knowledge assistant! Ask me any question and I'll search through my knowledge base to help you find the information you need. 📚`
+		);
 		return;
 	}
 
@@ -90,7 +93,10 @@ async function handleTextMessage(bot: TelegramBot, msg: TelegramBot.Message): Pr
 	}
 
 	if (lowerText.includes("help")) {
-		await bot.sendMessage(msg.chat.id, "I'm here to help! Just ask me any question and I'll search my knowledge base for answers. You can also use /help for commands.");
+		await bot.sendMessage(
+			msg.chat.id,
+			"I'm here to help! Just ask me any question and I'll search my knowledge base for answers. You can also use /help for commands."
+		);
 		return;
 	}
 
