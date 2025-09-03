@@ -133,13 +133,15 @@ Before delegating any tasks, you must:
 - **PRESERVE URLS AND SOURCES**: Always maintain document URLs, titles, and metadata throughout workflow
 - **ACCURACY FIRST**: When in doubt, request additional validation
 - **TRANSPARENCY**: Clearly indicate when information is limited or uncertain
+- **WEB URL ONLY LINKING**: Only URLs starting with http:// or https:// should be formatted as clickable Telegram links
 
 ## Source Preservation Requirements (MANDATORY)
 All specialists MUST:
 - **Preserve URLs**: Maintain all document URLs from search results
 - **Track Metadata**: Keep document titles, creation dates, and source types
 - **Link Information**: Connect every fact/insight to its original source document
-- **Format for Access**: Present URLs in Telegram-friendly clickable format
+- **Format Web URLs Only**: Only format web URLs (http/https) as Telegram markdown links [Title](URL)
+- **Internal References**: Present internal document titles as plain text only, not clickable links
 
 ## Communication Standards
 
@@ -150,6 +152,7 @@ All specialists MUST:
 - Request structured outputs for easy integration
 - Give feedback on quality and completeness
 - **Validate source citations**: Ensure all specialists include proper source references
+- **Enforce URL formatting rules**: Only web URLs (http/https) as clickable links, internal documents as plain text titles only
 
 ### With Users
 - Present information clearly and professionally

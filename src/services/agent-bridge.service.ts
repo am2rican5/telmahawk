@@ -233,18 +233,24 @@ export class AgentBridgeService {
 		formattedMessage = this.convertMarkdownToHTML(formattedMessage);
 		formattedMessage = this.sanitizeHTML(formattedMessage);
 
+		// Validate HTML tags are properly balanced
+		if (!this.validateHTMLTags(formattedMessage)) {
+			logger.warn("HTML tags are not properly balanced, sending as plain text");
+			formattedMessage = this.stripHTML(formattedMessage);
+		}
+
 		const MAX_MESSAGE_LENGTH = 4096;
 
 		try {
 			if (formattedMessage.length <= MAX_MESSAGE_LENGTH) {
 				await bot.sendMessage(chatId, formattedMessage, {
-					parse_mode: "HTML",
+					parse_mode: this.isValidHTML(formattedMessage) ? "HTML" : undefined,
 				});
 			} else {
 				const chunks = this.splitLongMessage(formattedMessage, MAX_MESSAGE_LENGTH);
 				for (const chunk of chunks) {
 					await bot.sendMessage(chatId, chunk, {
-						parse_mode: "HTML",
+						parse_mode: this.isValidHTML(chunk) ? "HTML" : undefined,
 					});
 					await new Promise((resolve) => setTimeout(resolve, 100));
 				}
@@ -299,15 +305,15 @@ export class AgentBridgeService {
 			return `<code>${code}</code>`;
 		});
 
+		// Convert links BEFORE other formatting to prevent nesting issues
+		html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+
 		// Convert bold text (but not our already enhanced bold)
 		html = html.replace(/\*\*((?!<\/b>).*?)\*\*/g, "<b>$1</b>");
 
-		// Convert italic text
-		html = html.replace(/\*((?!<\/i>).*?)\*/g, "<i>$1</i>");
-		html = html.replace(/_((?!<\/i>).*?)_/g, "<i>$1</i>");
-
-		// Convert links - [text](url)
-		html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+		// Convert italic text (more careful to avoid breaking existing tags)
+		html = html.replace(/\*(?!<[^>]*>)((?!<\/i>)[^*<>]*?)(?<!<[^>]*)\*/g, "<i>$1</i>");
+		html = html.replace(/_(?!<[^>]*>)((?!<\/i>)[^_<>]*?)(?<!<[^>]*)_/g, "<i>$1</i>");
 
 		// Convert bullet points
 		html = html.replace(/^\s*[-•*]\s+(.+)$/gm, "• $1");
@@ -495,5 +501,39 @@ export class AgentBridgeService {
 
 	private generateConversationId(userId: string): string {
 		return `${userId}-knowledge-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+	}
+
+	private validateHTMLTags(html: string): boolean {
+		const stack: string[] = [];
+		const tagRegex = /<\/?([a-zA-Z]+)(?:\s[^>]*)?>/g;
+		let match: RegExpExecArray | null;
+
+		while ((match = tagRegex.exec(html)) !== null) {
+			const fullTag = match[0];
+			const tagName = match[1].toLowerCase();
+
+			// Skip self-closing tags like <br/> 
+			if (fullTag.endsWith('/>') || ['br', 'hr', 'img'].includes(tagName)) {
+				continue;
+			}
+
+			if (fullTag.startsWith('</')) {
+				// Closing tag
+				if (stack.length === 0 || stack.pop() !== tagName) {
+					return false; // Unmatched closing tag
+				}
+			} else {
+				// Opening tag
+				stack.push(tagName);
+			}
+		}
+
+		return stack.length === 0; // All tags should be closed
+	}
+
+	private isValidHTML(text: string): boolean {
+		// Check if text contains HTML tags and if they're balanced
+		const hasHTMLTags = /<[^>]+>/g.test(text);
+		return hasHTMLTags ? this.validateHTMLTags(text) : false;
 	}
 }
