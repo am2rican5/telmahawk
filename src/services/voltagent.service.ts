@@ -178,7 +178,7 @@ export class VoltagentService {
 					conversationId,
 				});
 
-				const content = response.text || "I'm sorry, I couldn't generate a response.";
+				const content = response.text || "죄송합니다. 요청하신 내용을 처리하는 중에 문제가 발생했습니다. 질문을 다시 간단하게 표현해 주시거나 잠시 후 다시 시도해 주세요.";
 
 				logger.info(`Generated response for user ${input.userId}`, {
 					responseLength: content.length,
@@ -206,7 +206,7 @@ export class VoltagentService {
 						userId: input.userId,
 						conversationId,
 					});
-					const content = response.text || "I'm sorry, I couldn't generate a response.";
+					const content = response.text || "죄송합니다. 요청하신 내용을 처리하는 중에 문제가 발생했습니다. 질문을 다시 간단하게 표현해 주시거나 잠시 후 다시 시도해 주세요.";
 
 					logger.info(`Fallback response generated for user ${input.userId}`, {
 						responseLength: content.length,

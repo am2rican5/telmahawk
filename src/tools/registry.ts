@@ -1,4 +1,5 @@
 import type { Tool } from "@voltagent/core";
+import { BotIdentityToolFactory } from "./bot-identity.tool";
 import { EmbeddingToolFactory } from "./embedding.tool";
 import { EmbeddingRetrievalToolFactory } from "./embedding-retrieval.tool";
 import { KnowledgeRetrieverToolFactory } from "./knowledge-retriever.tool";
@@ -13,6 +14,7 @@ export class ToolRegistry {
 	}
 
 	private registerDefaultTools(): void {
+		this.factories.set("who_am_i", new BotIdentityToolFactory());
 		this.factories.set("embedding", new EmbeddingToolFactory());
 		this.factories.set("get_embedding", new EmbeddingRetrievalToolFactory());
 		this.factories.set("search_knowledge_base", new KnowledgeRetrieverToolFactory());

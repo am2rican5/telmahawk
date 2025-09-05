@@ -8,8 +8,8 @@ import { BotLogger } from "../utils/logger";
 const logger = new BotLogger("KnowledgeRetriever");
 
 const DEFAULT_SEARCH_OPTIONS = {
-	limit: 10,
-	threshold: 0.7,
+	limit: 3,
+	threshold: 0.8,
 	recencyWeight: 0.1,
 	webBoostScore: 0.2,
 	multiSearchBoost: 0.1,
@@ -116,7 +116,7 @@ export class KnowledgeRetriever extends BaseRetriever {
 		// Always disable web search to prevent irrelevant information
 		const shouldIncludeWeb = false;
 		return {
-			limit: options?.limit || 5,
+			limit: options?.limit || 3,
 			threshold: options?.threshold || DEFAULT_SEARCH_OPTIONS.threshold,
 			searchMode: shouldIncludeWeb ? "hybrid_web" : "hybrid",
 			includeWeb: shouldIncludeWeb,
@@ -604,11 +604,11 @@ ${doc.summary ? `Summary: ${doc.summary}` : ""}`;
 				"Search the knowledge base for relevant documents and information. Use this to find specific information from stored documents, blog posts, and other knowledge sources. Supports web search for recent information.",
 			parameters: z.object({
 				query: z.string().describe("The search query or question"),
-				limit: z.number().optional().describe("Maximum number of results to return (default: 5)"),
+				limit: z.number().optional().describe("Maximum number of results to return (default: 3, max: 5)"),
 				threshold: z
 					.number()
 					.optional()
-					.describe("Minimum similarity threshold for vector search (0-1, default: 0.7)"),
+					.describe("Minimum similarity threshold for vector search (0-1, default: 0.8)"),
 				source: z
 					.string()
 					.optional()
@@ -627,8 +627,8 @@ ${doc.summary ? `Summary: ${doc.summary}` : ""}`;
 			execute: async (args) => {
 				try {
 					const searchOptions: SearchOptions = {
-						limit: args.limit || 5,
-						threshold: args.threshold || 0.7,
+						limit: Math.min(args.limit || 3, 5), // Cap at maximum 5, default 3
+						threshold: args.threshold || 0.8,
 						source: args.source,
 						sourceType: args.sourceType,
 						searchMode: args.searchMode || "hybrid",

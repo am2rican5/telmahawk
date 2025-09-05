@@ -512,12 +512,12 @@ export class AgentBridgeService {
 			const fullTag = match[0];
 			const tagName = match[1].toLowerCase();
 
-			// Skip self-closing tags like <br/> 
-			if (fullTag.endsWith('/>') || ['br', 'hr', 'img'].includes(tagName)) {
+			// Skip self-closing tags like <br/>
+			if (fullTag.endsWith("/>") || ["br", "hr", "img"].includes(tagName)) {
 				continue;
 			}
 
-			if (fullTag.startsWith('</')) {
+			if (fullTag.startsWith("</")) {
 				// Closing tag
 				if (stack.length === 0 || stack.pop() !== tagName) {
 					return false; // Unmatched closing tag

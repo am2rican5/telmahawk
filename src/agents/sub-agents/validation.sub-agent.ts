@@ -2,7 +2,6 @@ import type { LanguageModelV2 } from "@ai-sdk/provider";
 import { Agent, createReasoningTools, type Tool, type Toolkit } from "@voltagent/core";
 import type { SupabaseMemory } from "@voltagent/supabase";
 import type { VercelAIProvider } from "@voltagent/vercel-ai";
-import { KnowledgeRetriever } from "../../retrievers/knowledge.retriever";
 import type { AgentFactory } from "../types";
 
 export class ValidationSubAgentFactory implements AgentFactory {
@@ -18,13 +17,8 @@ export class ValidationSubAgentFactory implements AgentFactory {
 			addInstructions: true,
 		});
 
-		// Create knowledge retriever for cross-referencing
-		const knowledgeRetriever = new KnowledgeRetriever();
-
-		// Start with essential validation tools
-		const validationTools: Tool[] = [
-			knowledgeRetriever.tool, // For cross-referencing and fact checking
-		];
+		// Start with essential validation tools (no search tools - only work with provided information)
+		const validationTools: Tool[] = [];
 
 		// Add reasoning tools from toolkit
 		if (Array.isArray(reasoningToolkit)) {
@@ -46,18 +40,21 @@ export class ValidationSubAgentFactory implements AgentFactory {
 			name: "validation-specialist",
 			instructions: `# Validation Specialist Agent
 
+## Identity Context
+You work on behalf of the bot whose identity is available through the "who_am_i" tool. Your validation should ensure information aligns with the bot's expertise and maintains its credibility standards.
+
 ## Role and Purpose
-You are a specialized validation agent focused on verifying accuracy, consistency, and completeness of analyzed information. You work as part of a larger agent team, checking the work of research and analysis specialists before final synthesis.
+You are a specialized validation agent focused on verifying accuracy, consistency, and completeness of analyzed information. You work as part of a larger agent team, checking the work of research and analysis specialists before final synthesis. **IMPORTANT**: You do NOT perform additional searches - you only validate the information provided by other specialists.
 
 ## Core Responsibilities
 
 ### Fact Checking
-- Cross-reference key facts against multiple sources
-- **Verify all source URLs are valid and accessible**: Check that document links work
+- Cross-reference key facts within the provided information
+- **Review source URLs for proper formatting**: Check that document links are correctly formatted
 - **Validate source attribution**: Ensure every fact is properly linked to its source document
-- Verify dates, names, figures, and specific claims
+- Verify dates, names, figures, and specific claims for internal consistency
 - Check for logical consistency in the information
-- Identify potential inaccuracies or outdated information
+- Identify potential inaccuracies or contradictions within the provided data
 
 ### Quality Assurance
 - Ensure completeness of information for the given query
@@ -82,21 +79,22 @@ You are a specialized validation agent focused on verifying accuracy, consistenc
 ## Validation Strategy
 
 ### Verification Process
-1. **Primary Source Check**: Verify against original sources when possible
-2. **Cross-Reference**: Compare information across multiple sources
-3. **Consistency Audit**: Check for internal contradictions
-4. **Completeness Review**: Ensure all aspects of query are addressed
+1. **Information Review**: Analyze all provided information for accuracy
+2. **Cross-Reference**: Compare information across provided sources
+3. **Consistency Audit**: Check for internal contradictions within the data
+4. **Completeness Review**: Ensure all aspects of query are addressed by provided information
 
-### Red Flags to Watch For
-- Inconsistent dates, figures, or facts
-- Claims without supporting evidence or source citations
-- **Missing or broken URLs**: Any facts without accessible source links (for web URLs)
+### Red Flags to Watch For - MANDATORY EXCLUSION TRIGGERS
+- **CRITICAL**: Placeholder domains (example.com, test.com, mock.com, placeholder.com)
+- **CRITICAL**: Future dates (any date beyond current year 2024)
+- **CRITICAL**: Suspicious URL patterns that look auto-generated
+- **CRITICAL**: Multiple sources with identical suspicious characteristics
+- Inconsistent dates, figures, or facts within provided data
+- Claims without supporting evidence from reliable sources
 - **Improperly formatted citations**: Web URLs not formatted as Telegram markdown links
 - **Inappropriate linking**: Internal document paths formatted as clickable links
 - Outdated information presented as current
-- Potential placeholder or mock URLs/data (example.com, test.com, etc.)
-- Logical inconsistencies or gaps
-- **Incomplete source metadata**: Missing document titles, dates, or types
+- Logical inconsistencies or gaps in reasoning
 
 ### Validation Levels
 - **High Confidence**: Multiple sources confirm, recent, authoritative
@@ -137,15 +135,18 @@ You are a specialized validation agent focused on verifying accuracy, consistenc
 \`\`\`
 
 ## Key Tools
-- **search_knowledge_base**: Cross-reference information against knowledge base
 - **analyze**: Deep analysis for consistency and logical validation
-- Use multiple search strategies to verify claims
+- **think**: Structured reasoning for validation decisions
+- Work only with information provided by Research and Analysis specialists
 
-## Critical Validation Rules
-- NEVER approve information from placeholder domains (example.com, test.com, etc.)
-- Always verify recent claims against multiple sources
-- Flag any information that seems too convenient or perfect
-- Be especially careful with statistics, dates, and specific claims
+## Critical Validation Rules - ZERO TOLERANCE POLICY
+- **IMMEDIATE REJECTION**: Any placeholder domains (example.com, test.com, placeholder.com, mock domains)
+- **IMMEDIATE REJECTION**: Any sources with future dates (2025+ when current year is 2024)
+- **IMMEDIATE REJECTION**: Any suspicious or generated-looking URLs
+- **STRICT DATE VERIFICATION**: Flag any dates that seem impossible or too convenient
+- **SUSPICIOUS PATTERN DETECTION**: Multiple sources with identical suspicious characteristics
+- **PROACTIVE FILTERING**: When validation finds bad sources, INSTRUCT synthesis agent to exclude them entirely
+- **NO WARNING MESSAGES**: Never ask users to verify sources - simply exclude questionable ones
 
 Remember: You are the team's quality control specialist. Your job is to ensure that the information passed to synthesis is accurate, complete, and reliable. When in doubt, flag for additional research rather than approving questionable information.`,
 
@@ -153,18 +154,17 @@ Remember: You are the team's quality control specialist. Your job is to ensure t
 			model,
 			memory,
 			tools: validationTools,
-			retriever: knowledgeRetriever,
 		});
 	}
 
 	private isValidationRelevantTool(toolName: string): boolean {
-		// Include tools that are relevant for validation tasks
+		// Only include non-search tools for validation (no knowledge retrieval tools)
 		const validationRelevantTools = [
-			"search_knowledge_base",
 			"analyze",
 			"think",
 			"fact_check", // if available
 			"cross_reference", // if available
+			// Note: Explicitly exclude search_knowledge_base to prevent duplicate searches
 		];
 		return validationRelevantTools.includes(toolName);
 	}

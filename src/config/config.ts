@@ -46,6 +46,13 @@ export interface Config {
 			debug?: boolean;
 		};
 	};
+	identity: {
+		name: string;
+		description: string;
+		personality: string;
+		capabilities: string;
+		version: string;
+	};
 }
 
 function parseAdminIds(adminIdsString?: string): number[] {
@@ -90,6 +97,19 @@ const config: Config = {
 			model: process.env.LLM_MODEL || "gpt-4o-mini",
 		},
 		port: parseInt(process.env.VOLTAGENT_PORT || "3141", 10),
+	},
+	identity: {
+		name: process.env.BOT_NAME || "Telmahawk",
+		description:
+			process.env.BOT_DESCRIPTION ||
+			"An intelligent Telegram bot specializing in game industry knowledge and expertise",
+		personality:
+			process.env.BOT_PERSONALITY ||
+			"Professional, knowledgeable, and helpful game industry consultant",
+		capabilities:
+			process.env.BOT_CAPABILITIES ||
+			"Game industry research, market analysis, development insights, trend identification, and strategic guidance",
+		version: process.env.BOT_VERSION || "1.0.0",
 	},
 };
 
